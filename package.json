@@ -1,0 +1,27 @@
+{
+  "name": "bizismart",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "npm": ">=11"
+  },
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace frontend",
+    "dev:api": "php backend/artisan serve --host=127.0.0.1 --port=18080",
+    "build": "npm run build --workspace frontend",
+    "test": "npm run test --workspace frontend",
+    "test:backend": "cd backend && php artisan test",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "lint": "npm run lint --workspace frontend",
+    "typecheck": "npm run typecheck --workspace frontend"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0"
+  }
+}
