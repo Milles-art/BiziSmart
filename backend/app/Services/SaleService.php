@@ -95,10 +95,10 @@ class SaleService
             if($this->hasDiscount($input)){
                 if(!isset($input['approval_token']))throw new ApiException('APPROVAL_REQUIRED','Request supervisor approval for this discount.',403);
                 $snapshot=$review;unset($snapshot['review_hash']);
-                return app(SupervisorApprovalService::class)->execute($actor,$input['approval_token'],'give_discount',$key,$snapshot,$write);
+                return $this->withMarginWarnings($review,app(SupervisorApprovalService::class)->execute($actor,$input['approval_token'],'give_discount',$key,$snapshot,$write));
             }
             if(isset($input['approval_token']))throw new ApiException('VALIDATION_ERROR','This sale has no discount to approve.',422);
-            return $write();
+            return $this->withMarginWarnings($review,$write());
         }, 3);
     }
 
@@ -167,8 +167,19 @@ class SaleService
             $mobile = Money::amount($input['mobile_amount'] ?? 0);
             if ($mobile > ($result['cash_allocated'] ?? $total)) throw new ApiException('PAYMENT_MISMATCH', 'Mobile amount exceeds the amount left after credit.', 422);
             if ($mobile > 0) { $result['mobile_amount']=$mobile; $result['cash_allocated']=($result['cash_allocated']??$total)-$mobile; }
+            $warnings = app(MarginAlertService::class)->warn($actor, $lines);
+            if ($warnings !== null) { $result['margin_warnings'] = $warnings; }
             return [...$result, 'review_hash'=>SupervisorApprovalService::snapshotHash($result)];
         } catch (\InvalidArgumentException|\OverflowException $e) { throw new ApiException('VALIDATION_ERROR', $e->getMessage(), 422); }
+    }
+
+    /** Replays the preview's margin warnings on a fresh commit; replays of saved sales omit them. */
+    private function withMarginWarnings(array $review, mixed $result): mixed
+    {
+        if (is_array($result) && array_key_exists('margin_warnings', $review)) {
+            $result['margin_warnings'] = $review['margin_warnings'];
+        }
+        return $result;
     }
 
     public function hasDiscount(array $input):bool {

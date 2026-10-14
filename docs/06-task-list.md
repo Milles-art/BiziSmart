@@ -92,7 +92,7 @@ Phase 1 gate: checkout, stock and till work end to end in a test supermarket.
 - [x] S19 Cash drops, manager acknowledgement and drawer reconciliation (F10.9).
 - [x] S20 English/Kiswahili interface, messages and receipts (F10.10).
 - [x] S21 Approved near-expiry batch markdowns (F10.11).
-- [ ] S22 Authorised margin alerts without cashier cost leaks (F10.12).
+- [x] S22 Authorised margin alerts without cashier cost leaks (F10.12). Warn-only MarginAlertService wired into sale preview/fresh commits; owners see cost detail, managers redacted warnings, cashiers nothing. Blocking policy remains undecided (D090). 6 backend cases pass; regressions green.
 - [ ] S23 Promotions, supported weighing-scale/label formats and customer-facing display.
   - [x] Best automatic item offers and selected-batch near-expiry markdowns with exact allocation/capacity.
   - [ ] Physical weighing-scale integration and customer-facing display.
