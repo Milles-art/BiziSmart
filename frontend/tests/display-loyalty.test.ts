@@ -1,0 +1,10 @@
+import {describe,it,expect} from 'vitest';
+import {customerDisplaySnapshot} from '../src/features/live/customerDisplaySnapshot';
+import {loyaltyQr} from '../src/features/live/loyaltyQr';
+import type {SaleReview} from '../src/features/live/api';
+import type {CartEntry} from '../src/features/live/checkoutState';
+import reference from './fixtures/loyalty-qr-reference.json';
+it('matches independent chillerlan byte-mode version3 L mask0 reference in every module',()=>{expect(loyaltyQr('BSL:0123456789abcdef0123456789abcdef')).toEqual(reference);});
+describe('customer display privacy',()=>{it('copies only reviewed customer facing fields and clears unreviewed totals',()=>{const data=customerDisplaySnapshot({customer_id:'secret',customer_name:'Private',review_hash:'secret',total:123,lines:[{name:'Rice',qty:'0.750',unit:'kg',line_total:123,product_id:'secret',buying_price:55}]} as unknown as SaleReview);expect(data).toEqual({lines:[{name:'Rice',qty:'0.750',unit:'kg',total:123}],total:123});expect(customerDisplaySnapshot(null)).toBeNull();});});
+it('shows draft cart quantities with no client price estimate or private catalogue fields',()=>{expect(customerDisplaySnapshot(null,[{key:'private',qty:'0.75',packaging_id:null,product:{id:'private',name:'Rice',unit:'kg',buying_price:100,selling_price:1000}} as CartEntry])).toEqual({lines:[{name:'Rice',qty:'0.75',unit:'kg',total:null}],total:null});});
+describe('local loyalty QR',()=>{it('rejects arbitrary data and produces a fixed version with finder and quiet border supplied by view',()=>{expect(()=>loyaltyQr('https://external.example')).toThrow();const matrix=loyaltyQr('BSL:0123456789abcdef0123456789abcdef');expect(matrix).toHaveLength(29);expect(matrix.every(row=>row.length===29)).toBe(true);expect(matrix[0].slice(0,7)).toEqual(Array(7).fill(true));expect(matrix[3].slice(0,7)).toEqual([true,false,true,true,true,false,true]);expect(matrix[7].slice(0,8)).toEqual(Array(8).fill(false));});});

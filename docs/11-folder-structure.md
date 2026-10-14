@@ -101,3 +101,21 @@ src/features/live/rememberedSession.ts owns minimal sessionStorage serialization
 
 
 S4b adds backend ProductPackaging/PackagingService, SavePackagingRequest/PackagingResource/PackagingController, additive migration 000010 and live frontend Packagings.tsx. Products and RTK Query connect these real routes; product catalogue tests cover versions, gram factors, barcode ownership and tenant permissions.
+
+S4c adds Department/DepartmentService, department request/resource/controller and additive migration 000011; frontend live Departments.tsx holds management and paginated pickers. Products/RTK Query provide real assignment/filtering. Backend/frontend catalogue suites and browser owner flows verify these connections.
+
+S4d receiving uses backend/app/Services/StockService.php, tenant ProductBatch/StockMovement models and additive migration 000012. Place receipt/list requests under Http/Requests/Products, batch resources under Http/Resources and the thin controller under Api/V1. Frontend live/StockReceiving.tsx holds batch reads and receipt input only; live/api.ts owns its RTK Query endpoints. Stock calculations and eligibility stay in Laravel. Test receipt transactions/tenant ownership/idempotency in backend/tests/Feature/StockReceivingTest.php; guarded process workers use only the separate test database.
+
+S4e keeps stock queries in backend/app/Services/StockService.php; StockAlertsController, StockAlertsRequest and ExpiryAlertResource expose read-only alerts. Products.tsx uses live/api.ts catalogue filters and authoritative stock strings. No additional migration or package is required.
+
+S4f movement-history reads use backend/app/Services/StockService.php and the StockMovement controller/request/resource. frontend/src/features/live/StockHistory.tsx displays ledger entries within StockReceiving.tsx; live/api.ts owns the authenticated query and cache invalidation.
+
+S4g: StockAdjustmentController/AdjustStockRequest call StockService previewAdjustment/adjust; additive migration 000013 adds encrypted reason, fingerprint and approver metadata. StockCorrection.tsx is nested in StockReceiving and uses live RTK Query preview/approval/commit adapters; no browser quantity arithmetic. StockAdjustmentTest covers exact stock, approval, tenant and process concurrency invariants.
+
+S6 till lifecycle: backend/app/Services/TillService.php plus TillCashService/TillAccessService; backend/app/Models/TillSession.php, TillCashEntry.php, TillOperation.php; backend/app/Http/Requests/Tills and TillResource/TillController. frontend/src/features/live/Tills.tsx connects through api.ts. TillTest and tills-live.test.tsx verify real contracts; tests/e2e/live.spec.js includes cashier till opening/reload/paid-out/variance approval/closing history on desktop and phone.
+
+F00 restores the supplied design through live/Dashboard.tsx and Inventory.tsx, shared StockAlertPanels and TillCards, compact SummaryCard/ScreenTabs, and existing domain dialogs. docs/design/BiziSmart-design-reference.zip keeps the intact visual reference; extracted preview files stay ignored under tmp/.
+
+S15 implementation: backend/app/Services/{ReturnService,ReturnAccessService,RefundCalculator}.php; append-only Models/{SaleReturn,SaleReturnItem,SaleExchange}.php; Http/Requests/Sales/ReturnRequest.php and Controllers/Api/V1/ReturnController.php; additive migration 000017; frontend/src/features/live/{Returns.tsx,returnState.ts} with live API adapters and POS entry point. Contract: docs/features/F03-returns-exchanges.md. MySQL regressions: SaleReturnTest; arithmetic: RefundCalculatorTest; frontend: returns-live.test.tsx; connected desktop/phone: tests/e2e/live.spec.js.
+
+S12a provider transport lives in backend/app/Payments (gateway contract, merchant binding and signature verification); it has no payment journal or callback endpoint yet. Keep future orchestration/reconciliation in Laravel domain services/jobs and expose only authorized real lifecycle routes. frontend/src/features/live/MobilePaymentStatus.tsx reads server capabilities in the existing POS dialog.

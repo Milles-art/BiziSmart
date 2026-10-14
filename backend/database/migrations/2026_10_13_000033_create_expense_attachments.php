@@ -1,0 +1,5 @@
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration {public function up():void{Schema::create('expense_attachments',function(Blueprint $t){$t->id();$t->char('public_id',26)->unique();$t->unsignedBigInteger('business_id');$t->unsignedBigInteger('expense_id');$t->unsignedBigInteger('actor_id');$t->unsignedBigInteger('device_id');$t->uuid('operation_id');$t->char('fingerprint',64);$t->text('path');$t->string('status',20);$t->string('mime',32);$t->unsignedInteger('bytes');$t->unsignedInteger('width');$t->unsignedInteger('height');$t->timestamps();$t->unique(['business_id','id']);$t->unique(['business_id','operation_id']);foreach(['expense_id'=>'expenses','actor_id'=>'users','device_id'=>'devices']as$c=>$table)$t->foreign(['business_id',$c])->references(['business_id','id'])->on($table)->restrictOnDelete();$t->index(['business_id','status','created_at']);});}public function down():void{throw new LogicException('Attachment journals are retained.');}};

@@ -15,6 +15,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(\App\Payments\MobileMoneyGateway::class, \App\Payments\SelcomGateway::class);
         $this->app->scoped(TenantContext::class, fn () => new TenantContext);
     }
 
@@ -23,6 +24,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        foreach(config('platform.features') as $feature){
+            \Laravel\Pennant\Feature::define($feature,function(string $scope)use($feature){
+                if($scope!=='business:'.app(TenantContext::class)->requireId())return false;
+                return app(\App\Services\PlanFeatureService::class)->features()[$feature]??false;
+            });
+        }
         \Illuminate\Support\Facades\RateLimiter::for('staff-login', function (\Illuminate\Http\Request $request) {
             $phone = is_string($request->input('phone')) ? $request->input('phone') : '';
             try { $phone = \App\Support\StaffPhone::normalize($phone); } catch (\InvalidArgumentException) {}

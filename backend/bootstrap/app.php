@@ -18,11 +18,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // API authentication errors stay JSON even when opened directly in a browser.
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/login');
         // Exact catalogue wire values must reach validation without silent whitespace normalisation.
-        $middleware->trimStrings(except: ['reorder_level', 'base_qty', 'barcode']);
+        $middleware->trimStrings(except: ['reorder_level', 'base_qty', 'barcode', 'qty', 'qty_change', 'expected_qty']);
         $middleware->alias(['permission' => \App\Http\Middleware\RequirePermission::class,
             'staff.session' => \App\Http\Middleware\RequireStaffSession::class,
             'owner' => \App\Http\Middleware\RequireOwner::class, 'auth.no_store' => \App\Http\Middleware\NoStoreAuth::class]);
         $middleware->prepend(AssignRequestId::class);
+        // Livewire uses the web session middleware before panel-persistent middleware.
+        $middleware->prepend(\App\Http\Middleware\ConfigureAdminSession::class);
         $middleware->appendToGroup('api', ResolveTenant::class);
         $middleware->prependToPriorityList([
             \Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,

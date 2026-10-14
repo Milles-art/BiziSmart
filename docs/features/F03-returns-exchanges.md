@@ -1,0 +1,19 @@
+# Receipt-linked returns and exchanges (S15)
+
+Approved D078/D081 and D083. Cash/credit receipts support atomic exchanges. Selcom receipts support proportional manually recorded external refunds through F08; BiziSmart sends no mobile payout.
+
+A seller looks up an exact receipt. Owners access tenant receipts; managers/cashiers only their currently assigned branch. Every commit requires a current eligible owner/manager supervisor grant; manager approval is scoped to the receipt branch. Cash uses the operator's own open till, including owner cross-branch receipt returns.
+
+Return quantities are base units: whole counted units or exact kilograms with three decimal places. Immutable original discounted logical line values determine refunds. Each partial refund is the difference between half-up cumulative entitlements before/after that return. All partitions sum to the original line value; repeated requests cannot exceed sold quantities or original payments. Prior invoice collections count as paid money. Reduce that receipt's unpaid debt first, then refund remaining paid cash/mobile proportionally under F08; only cash affects the drawer. Zero-value partial returns remain valid stock operations.
+
+Allocate returned quantities against original sale allocations in allocation order, subtracting prior return allocations. Good stock goes to its original batch. Damaged, already quarantined, recalled or expired stock goes to a separate quarantined batch linked to that original batch, preserving good original stock. Expiry is inclusive through the Tanzania local date. Every change goes through StockService with a movement and aggregate bound checks.
+
+Exchanges commit old-item returns and a linked replacement sale in one transaction. Paid refund funds the replacement cash allocation; collect/pay only the cash difference. Original debt is reduced first; replacement credit uses the original customer and their available limit after reduction. Replacement goods use current prices, packaging versions and normal FEFO stock checks. Insufficient stock, cash, credit or stale review rolls back the return, debt, approval, replacement and till together.
+
+Review binds operation UUID, receipt/branch, quantities/dispositions, prior returns, original debt and customer balance, batch balances/flags/expiry, own till revision, reason, replacement quote and additional tender. Any changed review requires fresh approval. Immutable actor/device/body-bound UUID replay returns the saved result even after grant consumption/till closure; current tenant/session/receipt-branch authority is still checked. Pending bodies/keys/grants stay in memory only and clear at sign-out.
+
+API: GET /returns/receipt?receipt_number=...; POST /returns/preview; POST /returns with Idempotency-Key equal to operation_id. Preview returns snapshot, review_hash, totals and replacement quote. Commit requires that hash plus approval_token. Original sales remain immutable; return status is derived from append-only allocations.
+
+Acceptance: exact cumulative money/quantity caps; debt-first after collections; original/quarantine stock; scoped receipts/grants; atomic exchanges and failure rollback; duplicate/reused-key handling; concurrent returns; tenant isolation; keyboard/phone connected UI and no financial browser persistence.
+
+S12 extends returns with mobile_refund/reference and external_transfer_executed false. Review before paying an external mobile refund, add its reference/completed attestation, then review again and obtain supervisor approval. Prior invoice collections contribute to their recorded payment method. Mobile paid returns that require a mobile refund cannot atomically reuse it for a replacement; the UI disables exchange for receipts with mobile money. Record the return and review the replacement separately.

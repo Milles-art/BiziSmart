@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\ApiException;
 use App\Models\Device;
+use App\Models\Branch;
 use App\Models\PersonalAccessToken;
 use App\Models\SupervisorApproval;
 use App\Models\User;
@@ -13,7 +14,7 @@ use PragmaRX\Google2FA\Google2FA;
 
 class SupervisorApprovalService
 {
-    public const PERMISSIONS = ['refund', 'void', 'give_discount', 'approve_variance'];
+    public const PERMISSIONS = ['refund', 'void', 'give_discount', 'approve_variance', 'adjust_stock', 'manage_settings'];
 
     public function __construct(private Google2FA $totp) {}
 
@@ -42,8 +43,10 @@ class SupervisorApprovalService
             $approver->failed_pin_attempts = 0;
             $approver->locked_until = null;
             $approver->save();
-            if (! $this->eligible($approver, $input['permission'])) {
-                return new ApiException('APPROVER_NOT_AUTHORIZED', 'An eligible owner or manager must approve this action.', 403);
+            if (! $this->eligible($approver, $input['permission'])
+                || ($input['permission'] === 'approve_variance' && $approver->hasRole('manager')
+                    && ! $this->varianceScope($approver, Branch::find($actor->branch_id)))) {
+                return new ApiException('APPROVER_NOT_AUTHORIZED', $input['permission'] === 'adjust_stock' ? 'An eligible owner must approve this correction.' : 'An eligible owner or manager must approve this action.', 403);
             }
             if ($approver->hasRole('owner')) {
                 if (! isset($input['code'])) { return new ApiException('TOTP_REQUIRED', 'Enter the owner’s authenticator code to approve.', 403); }
@@ -71,10 +74,10 @@ class SupervisorApprovalService
 
     /** Domain services must supply a server-validated snapshot and perform DB changes inside this callback. */
     public function execute(User $requester, #[\SensitiveParameter] string $plain, string $permission, string $operationId,
-        array $serverSnapshot, callable $operation): mixed
+        array $serverSnapshot, callable $operation, bool $consume = true): mixed
     {
         $requester->assertCurrentBusiness();
-        return DB::transaction(function () use ($requester, $plain, $permission, $operationId, $serverSnapshot, $operation) {
+        return DB::transaction(function () use ($requester, $plain, $permission, $operationId, $serverSnapshot, $operation, $consume) {
             $snapshot = SupervisorApproval::where('token_hash', hash('sha256', $plain))->first();
             if (! $snapshot) { throw $this->invalidApproval(); }
             $users = $this->lockUsers($requester->id, $snapshot->approver_id);
@@ -86,9 +89,14 @@ class SupervisorApprovalService
                 || (int) $approval->requester_id !== (int) $actor->id || (int) $approval->requester_token_id !== (int) $session->id
                 || (int) $approval->device_id !== (int) $session->device_id || $approval->permission !== $permission
                 || $approval->operation_id !== strtolower($operationId) || ! hash_equals($approval->payload_hash, self::snapshotHash($serverSnapshot))
-                || ! $approver || ! $this->eligible($approver, $permission) || $approver->locked_until?->isFuture()) {
+                || ! $approver || ! $this->eligible($approver, $permission) || $approver->locked_until?->isFuture()
+                || ($permission === 'refund' && ! app(ReturnAccessService::class)->approval($approver, $this->snapshotBranch($serverSnapshot)))
+                || ($permission === 'give_discount' && !$this->discountScope($approver,$this->snapshotBranch($serverSnapshot)))
+                || ($permission === 'approve_variance' && ! $this->varianceScope($approver,
+                    $this->snapshotBranch($serverSnapshot)))) {
                 throw $this->invalidApproval();
             }
+            if(!$consume)return $operation($approver);
             $approval->consumed_at = now();
             $approval->save();
             $result = $operation($approver);
@@ -130,7 +138,7 @@ class SupervisorApprovalService
             || ! Device::whereKey($current->device_id)->where('status', 'approved')->lockForUpdate()->first()) {
             throw new \Illuminate\Auth\AuthenticationException;
         }
-        if (! $fresh->hasPermissionTo($permission === 'approve_variance' ? 'manage_till' : 'sell')) {
+        if (! $fresh->hasPermissionTo($permission === 'adjust_stock' ? 'adjust_stock' : ($permission === 'approve_variance' ? 'manage_till' : 'sell'))) {
             throw new \Illuminate\Auth\Access\AuthorizationException;
         }
         return $current;
@@ -139,9 +147,24 @@ class SupervisorApprovalService
     private function eligible(User $user, string $permission): bool
     {
         return $user->is_active && ! $user->must_change_pin && $user->getRoleNames()->count() === 1
-            && ($user->hasRole('manager') || ($user->hasRole('owner') && $user->totp_confirmed_at && $user->totp_secret))
+            && (($permission !== 'adjust_stock' && $user->hasRole('manager')) || ($user->hasRole('owner') && $user->totp_confirmed_at && $user->totp_secret))
             && $user->hasPermissionTo($permission);
     }
+    private function snapshotBranch(array $snapshot): ?Branch
+    {
+        $id = $snapshot['branch_id'] ?? null;
+        return is_string($id) ? (new Branch)->resolveRouteBinding($id) : null;
+    }
+
+    private function discountScope(User $approver, ?Branch $branch):bool {
+        return $branch!==null && $approver->can('give_discount') && ($approver->hasRole('owner')||($approver->hasRole('manager')&&(int)$approver->branch_id===(int)$branch->id));
+    }
+
+    private function varianceScope(User $approver, ?Branch $branch): bool
+    {
+        return $branch !== null && app(TillAccessService::class)->canApproveVariance($approver, $branch);
+    }
+
     private function invalidApproval(): ApiException { return new ApiException('INVALID_APPROVAL', 'Request a fresh approval for this exact action.', 403); }
     private function invalidPin(): ApiException { return new ApiException('INVALID_PIN', 'The phone or PIN is incorrect.', 401); }
     private function locked(): ApiException { return new ApiException('ACCOUNT_LOCKED', 'Please try again after 15 minutes.', 423); }

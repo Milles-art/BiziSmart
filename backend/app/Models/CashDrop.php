@@ -1,0 +1,5 @@
+<?php
+namespace App\Models;
+use App\Models\Concerns\{BelongsToBusiness,HasPublicId};
+use Illuminate\Database\Eloquent\Model;
+class CashDrop extends Model {use BelongsToBusiness,HasPublicId;public const PUBLIC_ID_PREFIX='drop_';protected $guarded=['id','business_id','public_id'];protected $hidden=['id','business_id','actor_id','device_id','expense_id','parent_payment_id','till_session_id','reference_hash','fingerprint','result','branch_id','cashier_id','receiver_id','acknowledged_by','reversed_by'];protected static function booted():void{static::updating(function($drop){foreach(array_keys($drop->getDirty())as$key)if(!in_array($key,['status','acknowledged_by','acknowledged_at','reversed_by','reversed_at','reversal_reason','updated_at'],true))throw new \LogicException('Cash-drop handover snapshots are immutable.');});static::deleting(fn()=>throw new \LogicException('Cash drops cannot be deleted.'));}protected function casts():array{return ['amount'=>'integer','reason'=>'encrypted','reversal_reason'=>'encrypted','acknowledged_at'=>'datetime','reversed_at'=>'datetime'];}}

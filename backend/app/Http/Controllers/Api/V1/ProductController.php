@@ -7,18 +7,23 @@ use App\Http\Requests\Products\SaveProductRequest;
 use App\Http\Resources\ProductResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Product;
+use App\Models\Department;
 use App\Services\ProductService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ProductController
 {
-    public function __construct(private ProductService $products) {}
+    public function __construct(private ProductService $products, private \App\Services\StockService $stock) {}
 
     public function index(ListProductsRequest $request): JsonResponse
     {
         $input = $request->validated();
-        $query = Product::with('activePackagings.product');
+        $query = Product::with(['activePackagings.product', 'department']);
+        if (isset($input['department_id'])) {
+            $department = (new Department)->resolveRouteBindingQuery(Department::query(), $input['department_id'])->firstOrFail();
+            $query->where('department_id', $department->id);
+        }
         // Catalogue managers can also inspect disabled items; selling staff see active products only.
         if (! $request->user()->can('manage_products')) { $query->where('is_active', true); }
         if (isset($input['search'])) { $query->where('name', 'like', '%'.addcslashes($input['search'], '\\%_').'%'); }
@@ -31,29 +36,32 @@ class ProductController
                 });
             });
         }
+        $query = $this->stock->catalogue($query, $input);
+        $lowCount = $request->user()->can('receive_stock') ? $this->stock->lowStock(clone $query)->count() : null;
         $products = $query->orderBy('name')->orderBy('id')->paginate($input['per_page'] ?? 50);
         foreach ($products as $product) {
             $product->setRelation('selectedPackaging', isset($input['barcode']) ? $product->activePackagings->firstWhere('barcode', $input['barcode']) : null);
         }
         return ApiResponse::success(['products' => ProductResource::collection($products->items())->resolve()], meta: [
             'page' => $products->currentPage(), 'per_page' => $products->perPage(), 'total' => $products->total(),
+            ...($lowCount === null ? [] : ['low_stock_matches' => $lowCount]),
         ]);
     }
 
     public function show(Request $request, Product $product): JsonResponse
     {
         abort_if(! $product->is_active && ! $request->user()->can('manage_products'), 404);
-        return ApiResponse::success((new ProductResource($product->load('activePackagings.product')))->resolve());
+        return ApiResponse::success((new ProductResource($product->load(['activePackagings.product', 'department'])))->resolve());
     }
 
     public function store(SaveProductRequest $request): JsonResponse
     {
-        return ApiResponse::success((new ProductResource($this->products->save($request->user(), $request->validated())->load('activePackagings.product')))->resolve(), 201);
+        return ApiResponse::success((new ProductResource($this->products->save($request->user(), $request->validated())->load(['activePackagings.product', 'department'])))->resolve(), 201);
     }
 
     public function update(SaveProductRequest $request, Product $product): JsonResponse
     {
-        return ApiResponse::success((new ProductResource($this->products->save($request->user(), $request->validated(), $product)->load('activePackagings.product')))->resolve());
+        return ApiResponse::success((new ProductResource($this->products->save($request->user(), $request->validated(), $product)->load(['activePackagings.product', 'department'])))->resolve());
     }
 
     public function destroy(Request $request, Product $product): JsonResponse

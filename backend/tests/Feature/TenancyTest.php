@@ -258,7 +258,7 @@ it('covers every tenant table with a scoped model and forbids scope escapes in a
     $models = [];
     foreach (glob(app_path('Models/*.php')) as $file) {
         $class = 'App\\Models\\'.basename($file, '.php');
-        if (is_subclass_of($class, Illuminate\Database\Eloquent\Model::class)) {
+        if (is_subclass_of($class, Illuminate\Database\Eloquent\Model::class) && (new ReflectionClass($class))->isInstantiable()) {
             $model = new $class;
             $models[$model->getTable()] = $class;
         }
@@ -272,7 +272,13 @@ it('covers every tenant table with a scoped model and forbids scope escapes in a
     $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path()));
     foreach ($files as $file) {
         if ($file->isFile() && $file->getExtension() === 'php') {
-            expect(file_get_contents($file->getPathname()))->not->toMatch('/\b(?:withoutGlobalScopes?|newQueryWithoutScopes|newQueryWithoutScope|newQueryWithoutRelationships)\s*\(/');
+            $source = file_get_contents($file->getPathname());
+            // AGENTS permits the provider webhook's persisted order lookup before tenant selection.
+            // Allow only this exact mapping call, retaining the guard for any additional escape.
+            if ($file->getRealPath() === realpath(app_path('Http/Controllers/Api/V1/SelcomCallbackController.php'))) {
+                $source = str_replace('MobilePayment::withoutGlobalScopes()', 'MobilePayment::query()', $source);
+            }
+            expect($source)->not->toMatch('/\b(?:withoutGlobalScopes?|newQueryWithoutScopes|newQueryWithoutScope|newQueryWithoutRelationships)\s*\(/');
         }
     }
 });

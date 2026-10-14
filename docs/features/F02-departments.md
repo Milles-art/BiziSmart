@@ -1,0 +1,15 @@
+# S4c — Department catalogue
+
+Departments are business-scoped product groupings, distinct from category text and physical branches. This slice implements catalogue management and assignments; department reports, counts and manager resource restrictions remain future features.
+
+GET/POST `/departments`; PUT/DELETE `/departments/{department}`. Approved-device authentication is required; writes use the existing `manage_products` permission (owner and stockkeeper). Sellers read names/public IDs only. GET is paginated (50 default, 100 maximum), with optional literal name search. Response `{departments:[{id:dep_...,name,assigned_products_count?}]}` plus envelope pagination metadata. The assignment count is included only for product managers and includes inactive and archived products.
+
+Create/update input `{name}`: trimmed nonempty text, maximum 160 characters. Current names are unique per shop using the database's case-insensitive Unicode collation; another shop may use the same name. Duplicate current names return 409 DUPLICATE_DEPARTMENT. Internal/business/count/archive fields are prohibited. Effective edits and archive log encrypted old/new values with actor/device metadata.
+
+User selected: archive is blocked while any product belongs to the department. Include inactive and archived products to prevent silently changing historical attribution; return 409 DEPARTMENT_IN_USE. Clear/reassign department before archiving a product if the department may later be archived. No public archived-product reassignment/restore workflow is introduced here. DELETE otherwise soft archives and returns `{completed:true}`; historical department rows remain. Archiving frees the current name for a new department with a different public ID.
+
+Products accept nullable `department_id` as a dep_ public ID. Null clears assignment; omitted preserves it. Resolve an unarchived department in the current tenant under the same shop transaction lock used by department archive. Foreign/unknown/archived IDs return generic 404 without changing price, product or audit rows. Products return nullable department_id plus nullable department_name. GET `/products?department_id=dep_...` validates and resolves the same scoped department before filtering; combine with existing name/category/barcode filters. Categories are not converted automatically.
+
+Migration adds departments with tenant composite keys and product.department_id with a composite `(business_id,department_id)` foreign key. All records use fail-closed tenant models. Stock, profit reports, receiving, department counts, tier gates and manager department/till scopes are not enabled by catalogue metadata.
+
+Frontend: preserve Products' existing emerald/slate theme and MUI dialogs. Manage Departments opens a paginated list with create/rename/confirmed archive and retained errors. Product forms offer a paginated department selector and Unassigned; search supports a department filter. Never persist department/product data in browser storage. Test tenant/role isolation, composite ownership, archive/assignment serialization, current-name uniqueness, API fields, failed writes and desktop/phone forms.

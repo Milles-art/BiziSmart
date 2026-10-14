@@ -61,6 +61,7 @@ class StaffManagementService
             if (in_array('role', $changed, true)) { $this->roles->assign($user, $newRole); }
             if ($changed !== []) {
                 // Reauthenticate after identity, branch, role or activation changes.
+                \App\Models\OfflineLease::where('user_id',$user->id)->whereNull('revoked_at')->update(['revoked_at'=>now()]);
                 $user->tokens()->delete();
                 \App\Models\AuthChallenge::where('user_id', $user->id)->delete();
                 \App\Models\SupervisorApproval::revokeFor($user);

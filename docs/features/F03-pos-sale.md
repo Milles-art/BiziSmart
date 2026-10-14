@@ -23,11 +23,11 @@ Search/scan bar, product grid/list, cart (Redux), qty +/-, line discount (permis
 
 ## Acceptance criteria
 - [ ] Example from rules §3 (batches A/B/C, sell 15) produces items (A,10),(B,5) and stock A=0,B=15.
-- [ ] Cash 10,000 for total 8,500 -> change 1,500; total VAT 1,297 at 18%.
+- [x] Cash 10,000 for total 8,500 -> change 1,500; total VAT 1,297 at 18% (S7a).
 - [ ] Split cash 5,000 + M-Pesa 3,000 for total 8,500 -> `PAYMENT_MISMATCH`.
-- [ ] Credit sale over limit -> `CREDIT_LIMIT_EXCEEDED`; within limit increases outstanding balance.
-- [ ] Failure at any step leaves no partial data (rollback test).
-- [ ] Repeating the request with the same Idempotency-Key creates one sale.
+- [x] Credit sale over limit -> `CREDIT_LIMIT_EXCEEDED`; within limit increases outstanding balance.
+- [x] Cash prerequisite: injected cash-journal failure leaves no partial sale, stock or cash data. Full-method rollback still requires its future tests.
+- [x] Cash prerequisite: repeating the request with the same Idempotency-Key creates one sale. Full-method retry coverage remains pending.
 
 ## Supermarket extension
 F10 adds hardware shortcuts, packaging/weighted lines, exchanges, multilingual checkout, batch markdowns and restricted margin warnings. Define price/promotion precedence and exact quantity formats before implementing these paths. The server remains the authority on totals.

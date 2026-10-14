@@ -1,3 +1,5 @@
+import { OfflineRecoveryButton } from '../features/live/OfflinePOS';
+import { translate, useLanguage } from '../i18n';
 import { AlertCircle, KeyRound, Lock, Phone, Store } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useDispatch } from 'react-redux';
@@ -15,6 +17,7 @@ function invitation() {
   return value && /^[a-f0-9]{64}$/.test(value) ? value : null;
 }
 export function Login() {
+  const { language, setLanguage } = useLanguage();
   const dispatch = useDispatch();
   const [invite, setInvite] = useState(invitation);
   useEffect(() => { if (location.hash.startsWith('#setup=')) history.replaceState(null, '', location.pathname + location.search); }, []);
@@ -61,24 +64,25 @@ export function Login() {
     <div className="w-full max-w-md">
       <div className="mb-8 text-center">
         <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500 shadow-lg shadow-emerald-500/30"><Store className="h-8 w-8 text-white" /></div>
-        <h1 className="text-2xl font-bold text-white">BiziSmart</h1><p className="text-sm text-slate-400">Supermarket POS System</p>
+        <h1 className="text-2xl font-bold text-white">BiziSmart</h1><p className="text-sm text-slate-400">{translate("Supermarket POS System")}</p>
+        <button type="button" aria-label={translate('Change language')} onClick={() => setLanguage(language === 'en' ? 'sw' : 'en')} className="mt-3 rounded-lg border border-slate-600 px-3 py-1 text-xs text-slate-200">English / Kiswahili</button>
       </div>
       <div className="rounded-2xl bg-white p-7 shadow-2xl">
-        <h2 className="mb-1 text-lg font-bold text-slate-800">{invite ? 'Set up owner account' : changingPin ? 'Choose a new PIN' : enrolling ? 'Set up your authenticator' : challenge ? 'Verify your authenticator' : 'Sign In'}</h2>
-        <p className="mb-5 text-sm text-slate-500">{invite ? 'Choose the phone number and PIN for your shop owner.' : challenge && !changingPin ? 'Enter the six-digit code from your authenticator app.' : changingPin ? 'Choose 4–6 digits, different from your temporary PIN.' : 'Enter your phone number and PIN to continue'}</p>
-        {enrolling && <div className="mb-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800"><p>Add a time-based account in your authenticator using this setup key:</p><code className="mt-2 block break-all font-bold select-all">{challenge?.setup_secret}</code><p className="mt-2 text-xs">Keep this key private.</p></div>}
-        {error && <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-600"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+        <h2 className="mb-1 text-lg font-bold text-slate-800">{invite ? translate("Set up owner account") : changingPin ? translate("Choose a new PIN") : enrolling ? translate("Set up your authenticator") : challenge ? translate("Verify your authenticator") : translate("Sign In")}</h2>
+        <p className="mb-5 text-sm text-slate-500">{invite ? translate("Choose the phone number and PIN for your shop owner.") : challenge && !changingPin ? translate("Enter the six-digit code from your authenticator app.") : changingPin ? translate("Choose 4–6 digits, different from your temporary PIN.") : translate("Enter your phone number and PIN to continue")}</p>
+        {enrolling && <div className="mb-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800"><p>{translate("Add a time-based account in your authenticator using this setup key:")}</p><code className="mt-2 block break-all font-bold select-all">{challenge?.setup_secret}</code><p className="mt-2 text-xs">{translate("Keep this key private.")}</p></div>}
+        {error && <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-600"><AlertCircle className="h-4 w-4 shrink-0" />{translate(error)}</div>}
         <form onSubmit={submit} className="space-y-4">
-          {invite && <div><label htmlFor="owner-name" className="mb-1 block text-xs font-medium text-slate-500">Owner name</label><input id="owner-name" value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} required maxLength={100} disabled={busy} autoComplete="name" /></div>}
-          {!challenge && <div><label htmlFor="login-phone" className="mb-1 block text-xs font-medium text-slate-500">Phone Number</label><div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 focus-within:border-emerald-400"><Phone className="h-4 w-4 text-slate-400" /><input id="login-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0712345678" className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-300" required disabled={busy} autoComplete="tel" /></div></div>}
-          {(!challenge || changingPin) && <div><label htmlFor="login-pin" className="mb-1 block text-xs font-medium text-slate-500">{changingPin ? 'New PIN' : '4–6 digit PIN'}</label><div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 focus-within:border-emerald-400"><KeyRound className="h-4 w-4 text-slate-400" /><input id="login-pin" type="password" inputMode="numeric" pattern="[0-9]{4,6}" maxLength={6} value={pin} onChange={(e) => setPin(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none" required disabled={busy} autoComplete={changingPin || invite ? 'new-password' : 'current-password'} /></div></div>}
-          {(invite || changingPin) && <div><label htmlFor="confirm-pin" className="mb-1 block text-xs font-medium text-slate-500">Confirm PIN</label><input id="confirm-pin" type="password" inputMode="numeric" pattern="[0-9]{4,6}" maxLength={6} value={confirm} onChange={(e) => setConfirm(e.target.value)} className={fieldClass} required disabled={busy} autoComplete="new-password" /></div>}
-          {challenge && !changingPin && <div><label htmlFor="auth-code" className="mb-1 block text-xs font-medium text-slate-500">Authenticator code</label><input id="auth-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} className={fieldClass} required disabled={busy} autoComplete="one-time-code" /></div>}
-          <button type="submit" disabled={busy} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 text-sm font-bold text-white transition-all hover:bg-emerald-600 disabled:opacity-40"><Lock className="h-4 w-4" />{busy ? 'Checking…' : invite ? 'Create owner account' : changingPin ? 'Save PIN' : challenge ? 'Verify code' : 'Sign In'}</button>
-          {challenge && <button type="button" disabled={busy} onClick={() => { setChallenge(null); setError(''); }} className="w-full text-sm text-slate-500">Start sign-in again</button>}
+          {invite && <div><label htmlFor="owner-name" className="mb-1 block text-xs font-medium text-slate-500">{translate("Owner name")}</label><input id="owner-name" value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} required maxLength={100} disabled={busy} autoComplete="name" /></div>}
+          {!challenge && <div><label htmlFor="login-phone" className="mb-1 block text-xs font-medium text-slate-500">{translate("Phone Number")}</label><div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 focus-within:border-emerald-400"><Phone className="h-4 w-4 text-slate-400" /><input id="login-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0712345678" className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-300" required disabled={busy} autoComplete="tel" /></div></div>}
+          {(!challenge || changingPin) && <div><label htmlFor="login-pin" className="mb-1 block text-xs font-medium text-slate-500">{changingPin ? translate("New PIN") : translate("4–6 digit PIN")}</label><div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 focus-within:border-emerald-400"><KeyRound className="h-4 w-4 text-slate-400" /><input id="login-pin" type="password" inputMode="numeric" pattern="[0-9]{4,6}" maxLength={6} value={pin} onChange={(e) => setPin(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none" required disabled={busy} autoComplete={changingPin || invite ? "new-password" : "current-password"} /></div></div>}
+          {(invite || changingPin) && <div><label htmlFor="confirm-pin" className="mb-1 block text-xs font-medium text-slate-500">{translate("Confirm PIN")}</label><input id="confirm-pin" type="password" inputMode="numeric" pattern="[0-9]{4,6}" maxLength={6} value={confirm} onChange={(e) => setConfirm(e.target.value)} className={fieldClass} required disabled={busy} autoComplete="new-password" /></div>}
+          {challenge && !changingPin && <div><label htmlFor="auth-code" className="mb-1 block text-xs font-medium text-slate-500">{translate("Authenticator code")}</label><input id="auth-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} className={fieldClass} required disabled={busy} autoComplete="one-time-code" /></div>}
+          <button type="submit" disabled={busy} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 text-sm font-bold text-white transition-all hover:bg-emerald-600 disabled:opacity-40"><Lock className="h-4 w-4" />{busy ? translate("Checking…") : invite ? translate("Create owner account") : changingPin ? translate("Save PIN") : challenge ? translate("Verify code") : translate("Sign In")}</button>
+          {challenge && <button type="button" disabled={busy} onClick={() => { setChallenge(null); setError(''); }} className="w-full text-sm text-slate-500">{translate("Start sign-in again")}</button>}
         </form>
       </div>
-      <p className="mt-4 text-center text-xs text-slate-500">BiziSmart Supermarket</p>
+      <div className="mt-4 text-center"><OfflineRecoveryButton/></div><p className="mt-4 text-center text-xs text-slate-500">{translate("BiziSmart Supermarket")}</p>
     </div>
   </div>;
 }

@@ -255,7 +255,7 @@ it('rejects legacy unbound tokens on real session routes and omits sensitive sho
     $this->alpha->settings = ['till_variance_limit' => 5000, 'provider_secret' => 'never show'];
     $this->alpha->save();
     $this->withToken(authBoundToken($this, $this->userAlpha))->getJson(authUrl('me'))->assertOk()->assertJsonPath('data.business.settings.till_variance_limit', 5000)->assertDontSee('provider_secret');
-    $this->getJson(authUrl('me/features'))->assertOk()->assertJsonPath('data.features', []);
+    $this->getJson(authUrl('me/features'))->assertOk()->assertJsonPath('data.features.inventory', true)->assertJsonPath('data.features.tra', false)->assertDontSee('provider_secret');
 });
 
 it('rejects cross-business challenge and device-token links at the database boundary', function () {

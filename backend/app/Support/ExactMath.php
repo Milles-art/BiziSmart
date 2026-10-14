@@ -30,6 +30,29 @@ final class ExactMath
         return $left * $right;
     }
 
+    /** Half-up proportional share, including large totals, without constructing amount * numerator. */
+    public static function roundProportion(mixed $amount, mixed $numerator, mixed $denominator): int
+    {
+        $amount = self::integer($amount); $numerator = self::integer($numerator); $denominator = self::integer($denominator);
+        if ($amount < 0 || $denominator < 1 || $numerator < 0 || $numerator > $denominator) {
+            throw new InvalidArgumentException('A nonnegative amount and a proportion between zero and one are required.');
+        }
+        $whole = 0; $remainder = 0;
+        foreach (str_split(decbin($amount)) as $bit) {
+            $whole = self::multiply($whole, 2);
+            if ($remainder >= $denominator - $remainder) {
+                $remainder -= $denominator - $remainder; $whole = self::add($whole, 1);
+            } else { $remainder += $remainder; }
+            if ($bit === '1') {
+                if ($remainder >= $denominator - $numerator) {
+                    $remainder -= $denominator - $numerator; $whole = self::add($whole, 1);
+                } else { $remainder += $numerator; }
+            }
+        }
+        $half = intdiv($denominator, 2) + $denominator % 2;
+        return self::add($whole, $remainder >= $half ? 1 : 0);
+    }
+
     /** Round a nonnegative rational product half-up, without constructing an overflowing numerator. */
     public static function roundProductRatio(mixed $left, mixed $right, mixed $denominator): int
     {

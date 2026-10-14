@@ -32,6 +32,7 @@ class PackagingService
             if ($packaging) { $packaging->archived_at = now(); $packaging->is_active = false; $packaging->save(); }
             $next = ProductPackaging::create([...$attributes, 'product_id' => $product->id,
                 'family_id' => $packaging?->family_id ?? (string) Str::ulid(), 'version' => ($packaging?->version ?? 0) + 1]);
+            app(ProductPriceHistoryService::class)->record($actor,$product,$before['selling_price']??null,$next);
             if ($next->barcode !== null) { $this->reserveBarcode($next); }
             activity('products')->performedOn($next)->causedBy($actor)->event($packaging ? 'packaging_version_created' : 'packaging_created')
                 ->withProperties(['old' => $before, 'attributes' => [...$attributes, 'packaging_id' => $next->publicId(), 'version' => $next->version]])->log('Product packaging changed');

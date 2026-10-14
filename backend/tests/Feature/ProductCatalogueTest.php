@@ -47,6 +47,88 @@ afterEach(fn () => $this->context->clear());
 
 function catalogueUrl(string $suffix = '', string $shop = 'alpha'): string { return 'http://'.$shop.'.bizismart.test/api/v1/products'.$suffix; }
 
+function departmentUrl(string $suffix = '', string $shop = 'alpha'): string { return 'http://'.$shop.'.bizismart.test/api/v1/departments'.$suffix; }
+
+it('manages real departments, rejects duplicates atomically, reserves links and frees archived names', function () {
+    $id = $this->postJson(departmentUrl(), ['name' => ' Grocery '])->assertCreated()->assertJsonPath('data.name', 'Grocery')
+        ->assertJsonPath('data.assigned_products_count', 0)->assertJsonMissingPath('data.business_id')->json('data.id');
+    expect($id)->toStartWith('dep_');
+    $this->postJson(departmentUrl(), ['name' => 'grocery'])->assertStatus(409)->assertJsonPath('error.code', 'DUPLICATE_DEPARTMENT');
+    $other = $this->postJson(departmentUrl(), ['name' => 'Drinks'])->assertCreated()->json('data.id');
+    $this->putJson(departmentUrl('/'.$other), ['name' => 'Grocery'])->assertStatus(409);
+    $this->getJson(departmentUrl('?search=Drinks'))->assertOk()->assertJsonPath('data.departments.0.name', 'Drinks');
+    $this->putJson(departmentUrl('/'.$id), ['name' => 'Food'])->assertOk()->assertJsonPath('data.name', 'Food');
+    $this->getJson(departmentUrl('?per_page=1&page=2'))->assertOk()->assertJsonCount(1, 'data.departments')->assertJsonPath('meta.total', 2);
+    $this->getJson(departmentUrl('?search=%25'))->assertOk()->assertJsonCount(0, 'data.departments');
+    $this->deleteJson(departmentUrl('/'.$id))->assertOk()->assertJsonPath('data.completed', true);
+    $this->putJson(departmentUrl('/'.$id), ['name' => 'Gone'])->assertNotFound();
+    $next = $this->postJson(departmentUrl(), ['name' => 'Food'])->assertCreated()->json('data.id');
+    expect($next)->not->toBe($id);
+    $this->context->run($this->alpha, function () {
+        expect(\App\Models\Department::withTrashed()->count())->toBe(3);
+        expect(Activity::where('event', 'department_updated')->firstOrFail()->properties['old']['name'])->toBe('Grocery');
+        expect(Activity::where('event', 'department_archived')->firstOrFail()->properties['device_id'])->toStartWith('dev_');
+    });
+});
+
+it('assigns and filters departments independently of category and blocks archive until every product is cleared', function () {
+    $id = $this->postJson(departmentUrl(), ['name' => 'Food'])->assertCreated()->json('data.id');
+    $product = $this->postJson(catalogueUrl(), [...$this->input, 'department_id' => $id])->assertCreated()
+        ->assertJsonPath('data.department_id', $id)->assertJsonPath('data.department_name', 'Food')->assertJsonPath('data.category', 'Beverages')->json('data.id');
+    $this->deleteJson(departmentUrl('/'.$id))->assertStatus(409)->assertJsonPath('error.code', 'DEPARTMENT_IN_USE');
+    $this->getJson(catalogueUrl('?department_id='.$id))->assertOk()->assertJsonPath('data.products.0.id', $product);
+    $this->putJson(catalogueUrl('/'.$product), ['selling_price' => 1400])->assertOk()->assertJsonPath('data.department_id', $id);
+    $this->putJson(catalogueUrl('/'.$product), ['is_active' => false])->assertOk();
+    $this->deleteJson(departmentUrl('/'.$id))->assertStatus(409);
+    $this->putJson(catalogueUrl('/'.$product), ['department_id' => null])->assertOk()->assertJsonPath('data.department_id', null);
+    $this->getJson(catalogueUrl('?department_id='.$id))->assertOk()->assertJsonCount(0, 'data.products');
+    $this->deleteJson(departmentUrl('/'.$id))->assertOk();
+    $this->putJson(catalogueUrl('/'.$product), ['department_id' => $id, 'selling_price' => 1])->assertNotFound();
+    $this->getJson(catalogueUrl('/'.$product))->assertOk()->assertJsonPath('data.selling_price', 1400);
+    $this->getJson(catalogueUrl('?department_id='.$id))->assertNotFound();
+});
+
+it('retains archived product department attribution and blocks its department archive', function () {
+    $id = $this->postJson(departmentUrl(), ['name' => 'Historical'])->assertCreated()->json('data.id');
+    $product = $this->postJson(catalogueUrl(), [...$this->input, 'department_id' => $id])->assertCreated()->json('data.id');
+    $this->deleteJson(catalogueUrl('/'.$product))->assertOk();
+    $this->deleteJson(departmentUrl('/'.$id))->assertStatus(409);
+    $this->getJson(departmentUrl())->assertOk()->assertJsonPath('data.departments.0.assigned_products_count', 1);
+});
+
+it('isolates department IDs and metadata by tenant, rejects forged fields and respects the approved role matrix', function () {
+    $id = $this->postJson(departmentUrl(), ['name' => 'Alpha department'])->assertCreated()->json('data.id');
+    foreach ([['name' => '  '], ['name' => str_repeat('x', 161)], ['name' => 'Test', 'business_id' => 1], ['name' => 'Test', 'current_name' => 'FORGED']] as $invalid) {
+        $this->postJson(departmentUrl(), $invalid)->assertUnprocessable();
+    }
+    foreach (['manager', 'cashier'] as $role) {
+        $this->withToken($this->{'alpha'.ucfirst($role).'Token'});
+        $this->getJson(departmentUrl())->assertOk()->assertJsonMissingPath('data.departments.0.assigned_products_count')->assertHeader('Cache-Control', 'no-store, private');
+        $this->postJson(departmentUrl(), ['name' => 'Denied'])->assertForbidden();
+        $this->putJson(departmentUrl('/'.$id), ['name' => 'Denied'])->assertForbidden();
+        $this->deleteJson(departmentUrl('/'.$id))->assertForbidden();
+    }
+    $this->withToken($this->alphaStockkeeperToken);
+    $this->putJson(departmentUrl('/'.$id), ['name' => 'Stockkeeper update'])->assertOk();
+    $this->withToken($this->betaOwnerToken);
+    $this->postJson(departmentUrl('', 'beta'), ['name' => 'Stockkeeper update'])->assertCreated();
+    $this->putJson(departmentUrl('/'.$id, 'beta'), ['name' => 'Foreign'])->assertNotFound();
+    $this->postJson(catalogueUrl('', 'beta'), [...$this->input, 'department_id' => $id])->assertNotFound();
+    $this->getJson(catalogueUrl('?department_id='.$id, 'beta'))->assertNotFound();
+    $this->withToken('invalid');
+    $this->getJson(departmentUrl())->assertUnauthorized()->assertHeader('Cache-Control', 'no-store, private');
+});
+
+it('enforces composite department ownership in MySQL even when bypassing request validation', function () {
+    $foreign = $this->context->run($this->beta, fn () => \App\Models\Department::create(['name' => 'Beta', 'current_name' => 'Beta']));
+    $this->postJson(catalogueUrl(), $this->input)->assertCreated();
+    $this->context->run($this->alpha, function () use ($foreign) {
+        $product = Product::firstOrFail(); $product->department_id = $foreign->id;
+        expect(fn () => $product->save())->toThrow(QueryException::class);
+        expect($product->fresh()->department_id)->toBeNull();
+    });
+});
+
 it('creates shared-stock carton metadata, resolves packaging barcodes and versions edits immutably', function () {
     $product = $this->postJson(catalogueUrl(), $this->input)->assertCreated()->json('data.id');
     $url = catalogueUrl('/'.$product.'/packagings');
@@ -54,7 +136,7 @@ it('creates shared-stock carton metadata, resolves packaging barcodes and versio
         ->assertCreated()->assertJsonPath('data.base_qty', '24')->assertJsonPath('data.conversion_atoms', '24')->assertJsonPath('data.product_id', $product)->json('data.id');
     expect($pack)->toStartWith('pkg_');
     $this->getJson(catalogueUrl('?barcode=CARTON'))->assertOk()->assertJsonPath('data.products.0.selected_packaging.id', $pack)
-        ->assertJsonPath('data.products.0.selected_packaging.selling_price', 25000)->assertJsonPath('data.products.0.stock', null);
+        ->assertJsonPath('data.products.0.selected_packaging.selling_price', 25000)->assertJsonPath('data.products.0.stock', '0');
     $next = $this->putJson($url.'/'.$pack, ['base_qty' => '12', 'selling_price' => 14000])->assertOk()
         ->assertJsonPath('data.version', 2)->assertJsonPath('data.base_qty', '12')->json('data.id');
     expect($next)->not->toBe($pack);
@@ -130,10 +212,10 @@ it('isolates pack ownership, permits stockkeepers, denies manager writes and hid
     $this->postJson($url, $body)->assertNotFound();
 });
 
-it('persists counted products with exact quantities, public IDs and real unavailable stock metadata', function () {
+it('persists counted products with exact quantities, public IDs and real zero stock metadata', function () {
     $response = $this->postJson(catalogueUrl(), $this->input)->assertCreated()->assertJsonPath('data.buying_price', 800)
         ->assertJsonPath('data.reorder_level', '50')->assertJsonPath('data.quantity_precision', 0)
-        ->assertJsonPath('data.quantity_scale', 1)->assertJsonPath('data.stock', null)->assertJsonPath('data.stock_available', false)
+        ->assertJsonPath('data.quantity_scale', 1)->assertJsonPath('data.stock', '0')->assertJsonPath('data.stock_available', true)
         ->assertJsonMissingPath('data.business_id')->assertJsonMissingPath('data.reorder_level_atoms')->assertHeader('Cache-Control', 'no-store, private');
     expect($response->json('data.id'))->toStartWith('prod_');
     $this->getJson(catalogueUrl('/'.$response->json('data.id')))->assertOk()->assertJsonPath('data.barcode', '06123456789012');
@@ -166,7 +248,8 @@ it('rejects unsafe money, fractional counted units and authority fields', functi
 })->with([
     [['selling_price' => 1.5]], [['buying_price' => '800']], [['selling_price' => -1]],
     [['selling_price' => 9007199254740992]], [['reorder_level' => '1.5']], [['business_id' => 123]],
-    [['stock' => '100']], [['quantity_scale' => 1]], [['reorder_level_atoms' => 50]], [['department_id' => 'dep_foreign']],
+    [['stock' => '100']], [['stock_total' => '100']], [['stock_available' => true]], [['nearest_expiry' => '2027-01-01']],
+    [['quantity_scale' => 1]], [['reorder_level_atoms' => 50]], [['department_id' => 'dep_foreign']],
 ]);
 
 it('reserves changed and archived barcodes, rolls back collisions and permits the same code in another shop', function () {
@@ -228,8 +311,8 @@ it('filters and paginates the catalogue and treats search wildcards literally', 
     $this->getJson(catalogueUrl().'?search='.urlencode('100%'))->assertOk()->assertJsonPath('meta.total', 1);
     $this->getJson(catalogueUrl().'?search=_')->assertOk()->assertJsonPath('meta.total', 0);
     $this->getJson(catalogueUrl().'?per_page=101')->assertUnprocessable();
-    $this->getJson(catalogueUrl().'?low_stock=1')->assertUnprocessable();
-    $this->getJson(catalogueUrl().'?expiring_in=30')->assertUnprocessable();
+    $this->getJson(catalogueUrl().'?low_stock=1')->assertOk()->assertJsonPath('meta.total', 2);
+    $this->getJson(catalogueUrl().'?expiring_in=30')->assertOk()->assertJsonPath('meta.total', 0);
 });
 
 it('enforces active product limits on create and reactivation while retaining disabled and archived history', function () {
@@ -258,7 +341,11 @@ it('audits old and new prices without stock mutations', function () {
             ->and($event->properties['old']['buying_price'])->toBe(800);
         expect($event->getRawOriginal('properties'))->not->toContain('selling_price');
     });
-    $this->postJson(catalogueUrl('/'.$id.'/batches'), ['qty' => '100'])->assertNotFound();
+    // Receiving now exists; an incomplete receipt must still be rejected without changing stock.
+    $this->postJson(catalogueUrl('/'.$id.'/batches'), ['qty' => '100'])->assertUnprocessable()->assertJsonPath('error.code', 'VALIDATION_ERROR');
+    $this->context->run($this->alpha, function () {
+        expect(\App\Models\ProductBatch::count())->toBe(0); expect(\App\Models\StockMovement::count())->toBe(0);
+    });
 });
 
 it('fails closed outside a tenant and rejects cross-shop barcode foreign keys and retained models', function () {

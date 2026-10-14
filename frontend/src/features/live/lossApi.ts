@@ -1,0 +1,21 @@
+import { liveApi, type CorrectionPreview, type CorrectionResult } from './api';
+import type { ReportFilters } from './financeApi';
+export interface DepartmentReportRow { id:string|null;name:string;net_revenue:number;net_cogs:number;gross_profit:number;recorded_stock_value:number;negative_batches:number }
+export interface TillReportRow { id:string;branch_name:string;cashier_name:string;status:string;opening_float:number;expected_cash:number;closing_cash:number|null;variance:number|null;period_cash_entries:Record<string,number>;period_cash_drops:Record<string,number> }
+export interface LossRecord {id:string;batch_number:string;qty_change:string;qty_after:string;reason:string;created_at:string;approved_by:string;loss:{product_name:string;unit:string;category:string;loss_value:number;cost_price:number;department_name:string|null}}
+export interface AlertConfig {refund_count:number|null;refund_amount:number|null;void_count:number|null}
+export interface LossAlert {id:string;staff_name:string;kind:string;event_date:string;evidence:{observed:number;threshold:number};acknowledged_at:string|null}
+export interface LossBody {operation_id:string;batch_id:string;qty:string;reason:string;category?:string;department_id?:string;expected_qty?:string;approval_token?:string}
+export const lossApi=liveApi.enhanceEndpoints({addTagTypes:['LossReporting','Finance']}).injectEndpoints({endpoints:b=>({
+ departmentReport:b.query<{departments:DepartmentReportRow[];classification:string},ReportFilters&{department_id?:string}>({query:params=>({url:'reports/departments',params}),transformResponse:(r:{data:{departments:DepartmentReportRow[];classification:string}})=>r.data,providesTags:['LossReporting','Products','Departments','Sales','Returns','Batches']}),
+ tillReport:b.query<{tills:TillReportRow[];meta:{page:number;per_page:number;total:number}},ReportFilters>({query:params=>({url:'reports/tills',params}),transformResponse:(r:{data:{tills:TillReportRow[]};meta:{page:number;per_page:number;total:number}})=>({...r.data,meta:r.meta}),providesTags:['LossReporting','Tills']}),
+ lossReport:b.query<{losses:LossRecord[];totals:Record<string,number>;meta:{page:number;per_page:number;total:number}},ReportFilters>({query:params=>({url:'reports/losses',params}),transformResponse:(r:{data:{losses:LossRecord[];totals:Record<string,number>};meta:{page:number;per_page:number;total:number}})=>({...r.data,meta:r.meta}),providesTags:['LossReporting','Batches']}),
+ previewLossCount:b.mutation<CorrectionPreview&{loss_value:number},{count:boolean;body:LossBody}>({query:({count,body})=>({url:`stock/${count?'counts':'losses'}/preview`,method:'POST',body}),transformResponse:(r:{data:CorrectionPreview&{loss_value:number}})=>r.data}),
+ commitLossCount:b.mutation<CorrectionResult,{count:boolean;body:LossBody}>({query:({count,body})=>({url:`stock/${count?'counts':'losses'}`,method:'POST',body}),transformResponse:(r:{data:CorrectionResult})=>r.data,invalidatesTags:['LossReporting','Finance','Batches','Products','Movements']}),
+ lossAlerts:b.query<{alerts:LossAlert[];configuration:AlertConfig;meta:{page:number;per_page:number;total:number}},number>({query:page=>({url:'loss-alerts',params:{page}}),transformResponse:(r:{data:{alerts:LossAlert[];configuration:AlertConfig};meta:{page:number;per_page:number;total:number}})=>({...r.data,meta:r.meta}),providesTags:['LossReporting']}),
+ configureLossAlerts:b.mutation<{configuration:AlertConfig},AlertConfig>({query:body=>({url:'loss-alerts/configuration',method:'PUT',body}),transformResponse:(r:{data:{configuration:AlertConfig}})=>r.data,invalidatesTags:['LossReporting']}),
+ refreshLossAlerts:b.mutation<{created:number},void>({query:()=>({url:'loss-alerts/refresh',method:'POST'}),transformResponse:(r:{data:{created:number}})=>r.data,invalidatesTags:['LossReporting']}),
+ acknowledgeLossAlert:b.mutation<void,string>({query:id=>({url:`loss-alerts/${id}/acknowledge`,method:'POST'}),invalidatesTags:['LossReporting']})
+})});
+export const {useDepartmentReportQuery,useTillReportQuery,useLossReportQuery,usePreviewLossCountMutation,useCommitLossCountMutation,useLossAlertsQuery,useConfigureLossAlertsMutation,useRefreshLossAlertsMutation,useAcknowledgeLossAlertMutation}=lossApi;
+

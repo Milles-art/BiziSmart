@@ -1,0 +1,41 @@
+# Customer display, configured weight labels, loyalty cards and commission ranking
+
+2026-10-14 coordinated launch batch. User has not selected scales, printers or scanners and approved configurable software with hardware validation deferred. The existing emerald/slate components and exact Laravel checkout rules remain authoritative. No new frontend dependency is installed.
+
+## Customer display
+
+POS opens a same-computer browser popout, suitable for a second attached screen. It shows only shop name, cart product names, entered quantity and public unit/pack name. Draft carts show “Awaiting review”; totals and line charges appear only from Laravel's reviewed checkout. No customer name/contact, staff controls, costs, tokens, resource identifiers, credit details or approval data are projected into the display. Cart clear and POS unmount/sign-out clear or close the popout. Nothing is written to browser storage. A display never reports payment success; the genuine receipt confirms payment.
+
+This is a browser popout, not a remotely paired tablet session. Independent hardware/tablet delivery requires selection of a supported device and pairing/transport contract. Popup permission and physical second-screen placement must be checked in the shop.
+
+## Configured scale labels
+
+`GET /scales/profile` requires `sell` and returns nullable `profile`, `format: ean13_weight_grams` and `hardware_verified: false`. `POST /scales/profile` requires owner + `manage_settings`: `{operation_id, profile}`. A null profile disables labels. A profile specifies numeric string `prefix` (1–4 digits), zero-based `product_start`, `product_length`, `weight_start`, `weight_length`. Segments must be within the first 12 digits, nonempty and mutually disjoint from the prefix; the final digit is EAN-13's mandatory check digit. Input field bounds prevent unsafe segment arithmetic. Each immutable configuration version has tenant, actor/device, operation UUID and frozen request fingerprint; mismatching replays fail. No prefix or sample format is enabled by default.
+
+`POST /scales/decode` requires `sell`: `{label: "13 digits"}`. Laravel validates the check digit and selected profile, extracts the **integer gram** quantity, rejects zero, preserves leading zeros in the product code, and resolves an active weighed product whose exact registered base barcode matches that code. Response is `{product, qty}` with existing permission-filtered ProductResource and canonical exact kg string, e.g. 750 grams → `0.75`. No stock or financial journal changes occur during decoding. Checkout still recomputes the current price, quantity, eligible batches, promotions and approvals. The browser never trusts an encoded price.
+
+POS's existing serial scan queue first resolves the exact registered product/pack barcode. An unregistered configured-prefix EAN-13 then uses the server gram decoder. The server refuses to reinterpret any whole-label ProductBarcode reservation, including inactive/archived reservations, as weight; reservations remain tenant scoped. Malformed unregistered labels do not become guessed product quantities. Keyboard and supported camera scanners share this path; exact barcode search also submits configured labels. Manual kg entry remains available. Browser camera scanning requires a supported BarcodeDetector and HTTPS/camera permission.
+
+Only configured EAN-13 **weight-in-grams labels** are implemented. Embedded-price labels, direct serial/USB/Bluetooth scale readings, calibration, tare/stable-weight commands and vendor printer protocols require an actual supported model/protocol. Select hardware, obtain real labels, register exact product codes, configure positions, and pilot weighed checkout/returns. Software tests do not establish hardware compatibility.
+
+## QR loyalty cards
+
+`GET /customers/{customer}/loyalty-card` requires `manage_customers` and returns `{card: null | {id, token, active, created_at}}`. `POST` on the same path accepts `{operation_id}` and issues a random `BSL:` + 32 hexadecimal digit identifier. The token is encrypted at rest; tenant-scoped hash lookup avoids plaintext database searches. Issuing a replacement revokes every previous active card for that customer atomically under the current approved actor/device and business/customer locks. Actor/device/customer mismatching UUID reuse returns `OPERATION_ID_REUSED`. Replaying an already-replaced issuance returns inactive status and null token; it cannot revive the old card. Activities log only public card/customer identifiers.
+
+`POST /loyalty-cards/resolve` accepts `{token}`, requires `manage_customers`, is rate-limited and returns the existing CustomerResource. Other tenants and revoked/unknown cards cannot resolve it. A card selects an existing customer; it is neither authentication nor spending authority. Points, credit and redemption approval remain controlled by the approved existing services. No external QR generation service receives the token.
+
+Customers shows a locally generated, printable QR with a four-module quiet zone. Browser print opens only the card QR and identifier, without customer debts/contacts or surrounding shop UI. Camera QR recognition is enabled when the browser supports it; keyboard QR scanners and exact barcode entry work through POS's queue. Physical scanner/printed-card acceptance remains a pilot check.
+
+## Commission leaderboard
+
+`GET /incentives/leaderboard?page=1&per_page=30` requires owner + `view_reports`; page size is 1–100. Response includes `{leaderboard, basis: "all_time_net_earned_commission"}` and standard pagination meta. Ranked rows reuse the authoritative commission service's original-cashier earned/paid/balance/payable/refund-carry totals. Ranking uses all recorded net earned commission after reversals, descending. Equal earnings share competition rank (1, 1, 3); public cashier identifiers deterministically order ties. External payouts do not alter earned rank. Historical terms/paid-credit attribution and proportional refund rules stay unchanged. No wages, bonus, payout or access for other staff is inferred.
+
+## Verification
+
+`ScaleLabelTest` checks exact grams/product zeroes, invalid check digits, zero weight, wrong prefix and overlapping/oversized fields (2 tests/6 assertions green). Five added `IncentivesTest` cases cover encrypted cards, replay/replacement and revoked cards, actor/role/tenant boundaries, owner ranking/ties, configured decode/no cost leakage and unchanged stock, plus feature-disabled future earning terms with preserved captured credit collection/refund entitlements and reserved-label/tenant collisions. These MySQL cases await the root's coordinated full-suite run; they are not claimed passed before that evidence.
+
+The frontend compares every QR module with an independent chillerlan byte-mode version 3/L/mask 0 fixture; `backend/tests/fixtures/loyalty-qr-reference.php` regenerates that fixture from the installed Filament dependency. Four privacy/QR tests and nine POS scan-queue tests pass, including draft names/quantities without private fields or client price estimates, configured exact weights, card selection followed by product scans, no card token in catalogue URLs and plan-disabled display/scale controls. Registered base/pack prefix collisions preserve exact quantity/pack identity and ordered scans without decoder calls. Blocked popups show an actionable browser-permission message. Existing customer, POS, incentive and localisation suites pass. A commission-only configuration test verifies disabled loyalty inputs and null outgoing loyalty terms. Local typecheck and lint pass with no warnings.
+
+`tests/e2e/remaining-ui.spec.js` and guarded `display-fixture.php` prepare a genuine owner login, rate/profile configuration, QR issuance/selection, exact gram checkout, sanitized popout and earned leaderboard journey for desktop and phone. They are prepared and syntax-checked, not yet executed; root's browser run must include `display-fixture.php` from the guarded common fixture. Final MySQL/browser/full-system evidence belongs in the coordinated batch checklist.
+
+Additive migrations: `000036_create_loyalty_cards` and `000036_create_scale_label_profiles`. Both new tenant models use fail-closed BelongsToBusiness. No external payment, hardware success, deployment or print delivery is simulated.

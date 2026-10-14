@@ -21,6 +21,15 @@ class Device extends Model
     protected $fillable = ['user_id', 'device_uid', 'name', 'status', 'approved_by', 'last_seen_at', 'last_ip'];
     protected $hidden = ['id', 'public_id', 'business_id', 'user_id', 'approved_by', 'last_ip'];
 
+    protected static function booted(): void
+    {
+        static::updated(function (Device $device): void {
+            if ($device->wasChanged('status') && $device->status !== 'approved') {
+                OfflineLease::where('device_id',$device->id)->whereNull('revoked_at')->update(['revoked_at'=>now()]);
+            }
+        });
+    }
+
     protected function casts(): array
     {
         return ['name' => 'encrypted', 'last_seen_at' => 'datetime', 'last_ip' => 'encrypted'];

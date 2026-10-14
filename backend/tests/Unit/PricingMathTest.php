@@ -1,0 +1,5 @@
+<?php
+use App\Support\{PricingMath,Money};
+it('rounds percentage discounts on the authoritative whole-line gross',function(){expect(PricingMath::percentageNet(3003,5000))->toBe(1502);expect(PricingMath::percentageNet(1,5000))->toBe(1);expect(PricingMath::percentageNet(999,10000))->toBe(0);});
+it('prices fractional huge packs with an unrestricted exact denominator',function(){expect(PricingMath::roundScaledProduct(500001,3000003,3000003))->toBe(500001);expect(PricingMath::roundScaledProduct(1500002,1001,3000003))->toBe(501);expect(PricingMath::roundScaledProduct(3000003,Money::MAX_AMOUNT,3000003))->toBe(Money::MAX_AMOUNT);});
+it('rejects unsupported operands and detects scaled-price overflow',function(){expect(fn()=>PricingMath::roundScaledProduct(-1,2,3))->toThrow(InvalidArgumentException::class);expect(fn()=>PricingMath::roundScaledProduct(PHP_INT_MAX,PHP_INT_MAX,1))->toThrow(OverflowException::class);expect(fn()=>PricingMath::percentageNet(20,10001))->toThrow(InvalidArgumentException::class);});

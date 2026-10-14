@@ -34,10 +34,9 @@ class SaveProductRequest extends FormRequest
             }],
             'tracks_expiry' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
-            'department_id' => ['sometimes', 'nullable', function ($attribute, $value, $fail) {
-                if ($value !== null) { $fail('Department assignment is not available yet.'); }
-            }],
+            'department_id' => ['sometimes', 'nullable', 'string', 'regex:/^dep_[0-9A-HJKMNP-TV-Z]{26}$/D'],
             'business_id' => ['prohibited'], 'stock' => ['prohibited'], 'reorder_level_atoms' => ['prohibited'],
+            'stock_total' => ['prohibited'], 'stock_available' => ['prohibited'], 'nearest_expiry' => ['prohibited'],
             'quantity_precision' => ['prohibited'], 'quantity_scale' => ['prohibited'], 'packagings' => ['prohibited'],
         ];
     }

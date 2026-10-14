@@ -1,0 +1,17 @@
+export const bankingKiswahili:Record<string,string>={
+ 'Banking & supplier planning':'Benki na mipango ya wasambazaji',
+ 'Plan selected invoices, compare received costs and match statement evidence to completed bank payments.':'Panga ankara ulizochagua, linganisha gharama za bidhaa zilizopokelewa na linganisha taarifa ya benki na malipo yaliyokamilika.',
+ 'Payment plans':'Mipango ya malipo','Bank statement':'Taarifa ya benki','Price comparison':'Ulinganisho wa bei',
+ 'Unpaid invoice':'Ankara isiyolipwa','Choose invoice':'Chagua ankara','Due date':'Tarehe ya malipo','Planned amount (TSh)':'Kiasi kilichopangwa (TSh)',
+ 'Save payment plan':'Hifadhi mpango wa malipo','Cancel plan':'Ghairi mpango',
+ 'Plans are reminders. Record completed payment in Payables; cancel outdated plans after settlement.':'Mipango ni vikumbusho. Rekodi malipo yaliyokamilika kwenye Madeni ya wasambazaji; ghairi mipango iliyopitwa baada ya kulipa.',
+ 'Account label':'Jina la akaunti','Statement reference':'Kumbukumbu ya taarifa','Booking date':'Tarehe ya benki','Amount (TSh)':'Kiasi (TSh)','Direction':'Mwelekeo',
+ 'Debit (money out)':'Debiti (fedha zilizotoka)','Credit (money in)':'Krediti (fedha zilizoingia)','Record statement line':'Rekodi mstari wa taarifa',
+ 'Unmatched statement':'Taarifa isiyolinganishwa','Choose statement line':'Chagua mstari wa taarifa','Completed bank payment':'Malipo ya benki yaliyokamilika','Choose payment':'Chagua malipo','Match exact payment':'Linganisha malipo kamili',
+ 'One statement line matches one payment with the exact amount and direction. Unmatched fees, deposits and differences stay visible for review.':'Mstari mmoja wa taarifa hulinganishwa na malipo moja yenye kiasi na mwelekeo sawa. Ada, amana na tofauti zisizolinganishwa hubaki kwa ukaguzi.',
+ 'Last three received prices per product, in TSh per original base item or kilogram. Historical costs are not current supplier quotations.':'Bei tatu za mwisho za bidhaa zilizopokelewa, kwa TSh kwa kipimo cha msingi au kilogramu. Gharama za zamani si bei za sasa za msambazaji.',
+ 'Receive a supplier invoice to start comparing actual costs.':'Pokea ankara ya msambazaji kuanza kulinganisha gharama halisi.',
+ 'The outcome is unconfirmed. Retry the same operation before entering another.':'Matokeo hayajathibitishwa. Jaribu tena shughuli ileile kabla ya kuingiza nyingine.',
+ 'Retry same operation':'Jaribu tena shughuli ileile','Recorded. No transfer was executed.':'Imerekodiwa. Hakuna uhamisho wa fedha uliofanywa.',
+ 'Matched':'Imelinganishwa','Unmatched':'Haijalinganishwa','scheduled':'imepangwa','cancelled':'imeghairiwa','overdue':'imechelewa','unpaid now':'haijalipwa sasa','per':'kwa','received':'imepokelewa',
+};

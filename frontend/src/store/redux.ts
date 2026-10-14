@@ -1,3 +1,10 @@
+import { offlineReconciliationReducer } from '../features/live/offlineReconciliationState';
+import { clearOfflineCatalogue } from '../features/live/offlineVault';
+import { signedOut } from '../features/live/api';
+import type { Middleware } from '@reduxjs/toolkit';
+import { staffOperationsReducer } from '../features/live/staffOperationsState';
+import { messagingReducer } from '../features/live/messagingState';
+import { incentivesReducer } from '../features/live/incentivesState';
 import {
   configureStore,
   createSlice,
@@ -15,6 +22,15 @@ import { useSelector } from "react-redux";
 import type { Product } from "../types";
 import { liveApi, sessionReducer } from '../features/live/api';
 import { rememberSessionMiddleware, restoreRememberedSession } from '../features/live/rememberedSession';
+import { checkoutReducer } from '../features/live/checkoutState';
+import { returnReducer } from '../features/live/returnState';
+import {mobileRefundReducer} from '../features/live/mobileRefundState';
+import {catalogueImportReducer} from '../features/live/catalogueImportState';
+import { financialReducer } from '../features/live/financeState';
+import { supplierReducer } from '../features/live/supplierState';
+import { pricingReducer } from '../features/live/pricingState';
+import {heldReducer} from '../features/live/heldState';
+import { collectionReducer } from '../features/live/collectionState';
 
 const STORAGE_KEY = "bizismart-demo-v2";
 export function loadBusiness(
@@ -93,14 +109,22 @@ export const demoApi = createApi({
     }),
   }),
 });
+const offlineSignOutMiddleware: Middleware = () => next => action => {
+  if (signedOut.match(action)) void clearOfflineCatalogue().catch(() => { /* Retain encrypted pending records; storage failures never authenticate a workspace. */ });
+  return next(action);
+};
 export const reduxStore = configureStore({
   reducer: {
-    session: sessionReducer,
+    messaging:messagingReducer,offlineReconciliation:offlineReconciliationReducer,staffOperations:staffOperationsReducer,incentives:incentivesReducer,financial:financialReducer,supplierOperations:supplierReducer,pricing:pricingReducer,
+    returns: returnReducer, mobileRefund:mobileRefundReducer,
+    checkout: checkoutReducer,
+    collection: collectionReducer,
+    session: sessionReducer, held:heldReducer,catalogueImport:catalogueImportReducer,
     [liveApi.reducerPath]: liveApi.reducer,
     business: businessSlice.reducer,
     [demoApi.reducerPath]: demoApi.reducer,
   },
-  middleware: (g) => g().concat(demoApi.middleware, liveApi.middleware, rememberSessionMiddleware),
+  middleware: (g) => g().concat(demoApi.middleware, liveApi.middleware, rememberSessionMiddleware, offlineSignOutMiddleware),
   devTools: false,
 });
 restoreRememberedSession(reduxStore.dispatch);

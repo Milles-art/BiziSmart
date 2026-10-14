@@ -19,7 +19,7 @@ class ResolveTenant
         $this->context->clear();
         Auth::forgetGuards();
         try {
-            if ($request->routeIs('health')) {
+            if ($request->routeIs('health','payments.selcom.callback','messaging.whatsapp.webhook')) {
                 return $next($request);
             }
             $host = strtolower($request->getHost());
@@ -37,7 +37,7 @@ class ResolveTenant
                 throw new ApiException('NOT_FOUND', 'The requested resource was not found.', 404);
             }
             $this->context->set($business);
-            return $next($request);
+            return app(EnforceSubscriptionFeatures::class)->handle($request,$next);
         } finally {
             $this->context->clear();
             Auth::forgetGuards();

@@ -29,3 +29,7 @@ Thumbs.db
 *.log
 /tmp/
 /.local/
+/backend/.local/
+/backend/public/js/filament/
+/backend/public/css/filament/
+/backend/public/fonts/filament/

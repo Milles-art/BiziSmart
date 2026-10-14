@@ -44,7 +44,14 @@ class AuthController
     }
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        \Illuminate\Support\Facades\DB::transaction(function () use ($request) {
+            $user=$request->user();
+            $user->refreshForUpdate();
+            $token=$user->currentAccessToken();
+            \App\Models\OfflineLease::where('user_id',$user->id)->where('device_id',$token->device_id)
+                ->whereNull('revoked_at')->update(['revoked_at'=>now()]);
+            $token->delete();
+        },3);
         return ApiResponse::success(['completed' => true]);
     }
     public function rotate(Request $request): JsonResponse { return $this->respond($this->auth->rotate($request->user())); }
@@ -52,12 +59,12 @@ class AuthController
     {
         $user = $request->user();
         $business = $user->business;
-        return ApiResponse::success(['user' => (new StaffResource($user))->resolve(), 'business' => ['name' => $business->name,
+        return ApiResponse::success(['user' => (new StaffResource($user))->resolve(), 'features'=>app(\App\Services\PlanFeatureService::class)->features(), 'business' => ['name' => $business->name,
             'vat_rate' => $business->vat_rate, 'settings' => array_intersect_key($business->settings ?? [], ['till_variance_limit' => true])]]);
     }
     public function features(Request $request): JsonResponse
     {
-        return ApiResponse::success(['features' => (object) array_filter($request->user()->business->plan->features ?? [], 'is_bool')]);
+        return ApiResponse::success(['features' => (object) app(\App\Services\PlanFeatureService::class)->features()]);
     }
     private function respond(array $result): JsonResponse { return ApiResponse::success($result['data'], $result['status']); }
 }

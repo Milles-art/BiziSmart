@@ -23,3 +23,5 @@ Status: approved capability scope; detailed API/schema design pending. This is t
 - A count correction writes exactly one movement per applied adjustment, without overselling races.
 
 F10 specifies the 12 approved additions. Both documents apply to this one supermarket product.
+
+S4c implements department catalogue and product assignment/filter only (features/F02-departments.md). Reports, counts and manager department/till resource scope remain pending; basic catalogue read access does not grant financial or stock access.

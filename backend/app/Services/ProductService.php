@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\ApiException;
 use App\Models\Business;
+use App\Models\Department;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\User;
@@ -34,6 +35,10 @@ class ProductService
             }
             if ($product->exists && ! $product->is_active && ($input['is_active'] ?? false)) { $this->checkLimit($business); }
             $before = $product->exists ? $this->snapshot($product) : null;
+            if (array_key_exists('department_id', $input)) {
+                $product->department_id = $input['department_id'] === null ? null : (new Department)->resolveRouteBindingQuery(Department::query(), $input['department_id'])->lockForUpdate()->firstOrFail()->id;
+                $product->unsetRelation('department');
+            }
             foreach (['name', 'barcode', 'category', 'unit', 'buying_price', 'selling_price', 'tracks_expiry', 'is_active'] as $field) {
                 if (array_key_exists($field, $input)) { $product->{$field} = $input[$field]; }
             }
@@ -45,6 +50,7 @@ class ProductService
             }
             $product->save();
             if ($product->barcode !== null) { $this->reserveBarcode($product); }
+            app(ProductPriceHistoryService::class)->record($actor,$product,$before['selling_price']??null);
             $after = $this->snapshot($product);
             if ($before !== $after) {
                 activity('products')->performedOn($product)->causedBy($actor)->event($before === null ? 'product_created' : 'product_updated')
@@ -99,7 +105,7 @@ class ProductService
 
     private function snapshot(Product $product): array
     {
-        return ['name' => $product->name, 'barcode' => $product->barcode, 'category' => $product->category,
+        return ['name' => $product->name, 'barcode' => $product->barcode, 'category' => $product->category, 'department_id' => $product->department?->publicId(),
             'quantity_type' => $product->quantity_type, 'unit' => $product->unit, 'buying_price' => $product->buying_price,
             'selling_price' => $product->selling_price, 'reorder_level' => Quantity::format($product->reorder_level_atoms, $product->quantity_type === 'weight'),
             'tracks_expiry' => $product->tracks_expiry, 'is_active' => $product->is_active];

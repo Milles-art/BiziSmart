@@ -41,6 +41,7 @@ class User extends Authenticatable
 
     private function revokeStaffSessions(): void
     {
+        OfflineLease::where('user_id',$this->id)->whereNull('revoked_at')->update(['revoked_at'=>now()]);
         $this->tokens()->delete();
         AuthChallenge::where('user_id', $this->id)->delete();
         SupervisorApproval::revokeFor($this);

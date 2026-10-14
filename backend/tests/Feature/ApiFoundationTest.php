@@ -96,3 +96,21 @@ it('renders domain exceptions with safe structured details', function () {
         ->assertJsonPath('error.code', 'INSUFFICIENT_STOCK')
         ->assertJsonPath('error.field', 'items.0.qty')->assertJsonPath('error.details.available', 3);
 });
+
+it('prevents caching return error envelopes even when exceptions bypass route middleware', function () {
+    Route::get('/api/v1/returns/test-no-store-auth', fn () => throw new AuthenticationException);
+    Route::get('/api/v1/returns/test-no-store-denied', fn () => abort(403));
+    foreach (['application/json','text/html'] as $accept) {
+        $this->get('/api/v1/returns/test-no-store-auth',['Accept'=>$accept])->assertUnauthorized()->assertHeader('Cache-Control','no-store, private');
+        $this->get('/api/v1/returns/test-no-store-denied',['Accept'=>$accept])->assertForbidden()->assertHeader('Cache-Control','no-store, private');
+        $this->get('/api/v1/returns/test-no-store-missing',['Accept'=>$accept])->assertNotFound()->assertHeader('Cache-Control','no-store, private');
+    }
+});
+
+
+it('publishes only authenticated seller payment capabilities and protects their error envelopes', function () {
+    $route = Route::getRoutes()->getByName('payments.capabilities');
+    expect($route)->not->toBeNull();
+    expect($route->gatherMiddleware())->toContain('auth:sanctum','staff.session','permission:sell','auth.no_store');
+    $this->get('/api/v1/payments/capabilities', ['Accept'=>'text/html'])->assertNotFound()->assertHeader('Cache-Control','no-store, private');
+});

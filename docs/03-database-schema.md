@@ -6,6 +6,16 @@ Conventions: table names plural snake_case. `id` bigint unsigned PK (internal). 
 
 Tenant models use the `BelongsToBusiness` trait. Tables marked **(global)** have no `business_id`.
 
+## Implemented S7 cash schema (migration 000015)
+This supersedes the draft sale columns for the initial cash delivery. `sales` stores business/branch/cashier/device/till ownership, unique business UUID operation_id and receipt_number, request fingerprint, immutable logical `lines` JSON, VAT rate and unsigned bounded integer subtotal/discount/total/VAT/tender/change. Every ownership FK is composite with business_id; (business_id,id) is unique. `businesses.sale_sequence` is incremented under the shop lock in the same transaction.
+
+`sale_items` stores tenant sale/product/batch FKs, line_index, positive base qty_atoms and snapshotted unit_price. Monetary totals belong to logical lines, never rerounded batch splits. `sale_payments` is an append-only tenant sale FK, method and allocated amount. All three tenant models use BelongsToBusiness/public IDs and immutable records. `stock_movements.sale_id` is an optional composite FK; sale allocations append a movement per batch with fresh operation UUIDs and public sale/line references. Customer/debt/refund/mobile columns and additional journals belong to their later additive migrations.
+
+## S9 customer/debt schema (migration 000016)
+`customers` stores encrypted name/optional phone, tenant-unique keyed canonical phone lookup, bounded integer credit_limit and journal-derived outstanding_balance. Public IDs use cust_. Profile writes cannot change balances; no archive/notes feature is implemented by this migration.
+
+`sales.customer_id` is nullable with composite tenant ownership. Immutable sale_payments supports cash and credit; `sale_debts` records original_amount/remaining_amount per sale, with composite business/customer/sale ownership. `customer_payments` records an immutable cash collection, actor/device/own till, tenant-unique operation UUID, fingerprint and reviewed public invoice allocations. `debt_allocations` journals each selected invoice settlement with composite customer/payment/debt foreign keys. Payments and allocation journals are append-only; DebtService owns locked balance changes. Mobile collections are linked by migration 000021; return journals are migrations 000017/000020.
+
 ## Platform / admin (global)
 | Table | Columns |
 |---|---|
@@ -33,7 +43,7 @@ Tenant models use the `BelongsToBusiness` trait. Tables marked **(global)** have
 | held_sales | id, public_id, business_id, branch_id, user_id, cart JSON, expires_at | |
 | till_sessions | id, public_id, business_id, branch_id, cashier_id, opened_at, closed_at nullable, opening_float, closing_cash nullable, expected_cash nullable, variance nullable, approved_by nullable, status (open, closed) | unique partial: one open per (business_id, branch_id, cashier_id) enforced in code + test |
 | till_paid_outs | id, business_id, till_session_id, amount, reason, user_id | |
-| mpesa_transactions | id, business_id, sale_id nullable, phone, amount, checkout_request_id (**unique, globally**), merchant_request_id, status (pending, confirmed, failed, timeout), raw_callback JSON, confirmed_at | global unique lookup used by the webhook to find the tenant |
+| mobile_payments | Tenant/actor/device/branch/till; immutable encrypted request/fingerprints, purpose, operation UUID, exact TZS amount, mutable reconciliation status/timestamps; globally unique provider evidence; unique sale/customer-payment consumption | Migrations 000018/000021; composite ownership FKs; models guard immutable identity and allocated/confirmed evidence. |
 | suppliers | id, public_id, business_id, name, phone, notes | Supplier UI is in the supermarket roadmap |
 | sync_operations | id, business_id, operation_id (**unique**), device_id, type, status, result JSON, created_at, processed_at | idempotency |
 | sync_conflicts | id, business_id, operation_id, device_id, type (NEGATIVE_STOCK, PRICE_CHANGED, EXPIRED_BATCH, RECALLED_BATCH, QUARANTINED), product_id nullable, batch_id nullable, details JSON, status (open, resolved), resolved_by nullable, resolved_note nullable, timestamps | |
@@ -77,7 +87,100 @@ Additive migration 000008 creates supervisor_approvals with public_id (apr_), bu
 ## S3 exact quantity extension (specified, tables not yet implemented)
 Use features/F02-exact-quantities.md for the S4 schema: counted/weight products, signed BIGINT atom balances/movements, integer-gram precision for weights, product packaging versions and one shared tenant barcode registry. Existing product/batch/sale tables above are draft baseline columns and are superseded by the atom/snapshot plan for affected quantities. Money remains integer TSh and API amounts must fit the browser-safe integer range. Never add these stock tables without tenant composite keys, StockService and isolation/concurrency tests in S4.
 
-S4a migration 000009 implements only `products` and `product_barcodes`: tenant-scoped models, product public IDs, counted/weight metadata, integer prices, signed reorder_level_atoms, activation/soft archive and current base barcode. Registry rows retain every reserved base barcode with unique (business_id, barcode), binary collation and a composite (business_id, product_id) product foreign key. S4b adds packaging associations and extends the registry additively (below). Departments, batches and movement tables remain pending. Product quantity type is immutable from creation to preserve its audit history. No stock quantity is stored or changed in this catalogue slice.
+S4a migration 000009 implements only `products` and `product_barcodes`: tenant-scoped models, product public IDs, counted/weight metadata, integer prices, signed reorder_level_atoms, activation/soft archive and current base barcode. Registry rows retain every reserved base barcode with unique (business_id, barcode), binary collation and a composite (business_id, product_id) product foreign key. S4b adds packaging associations and extends the registry additively (below). S4c departments are defined below. Batches and movement tables remain pending. Product quantity type is immutable from creation to preserve its audit history. No stock quantity is stored or changed in this catalogue slice.
 
 ## S4b packaging schema (implemented)
 Migration 000010 adds tenant-scoped product_packagings with prefixed public IDs, product/family/version, integer conversion_atoms, independent integer selling_price, binary-collated optional barcode, active/archive metadata and timestamps. Composite ownership references products(business_id,id); unique business/family/version keeps immutable versions distinct. The shared product_barcodes registry adds nullable packaging_id and a composite business/product/package FK, preventing attachment to another product or shop. Base codes retain null packaging_id. Archived versions and reservations stay stored. This migration adds no batch, balance or movement table.
+
+## S4c department schema
+Migration 000011 creates scoped departments (public ID, business FK, name, nullable current_name, timestamps/soft archive); unique business/current_name enforces current-name uniqueness and NULL on archive permits reuse without deleting history. Composite business/id unique supports product.business_id/department_id FK. Product department_id is nullable and hidden from raw model serialization; resources return a dep_ public ID/name. Department's assignedProducts relation retains archived products for the approved archive guard/count. No stock data changes.
+
+## S4d receiving schema
+New additive migration creates tenant-scoped product_batches and stock_movements. Batches have public_id, composite business/product ownership, signed qty_remaining_atoms, integer base-unit cost_price, expiry date, received_at, quarantine/recall flags, tenant-unique operation UUID, SHA-256 canonical request fingerprint and original receipt metadata JSON. Movements have public_id, composite business/product/batch/user/device ownership, signed delta/after atoms, type, operation UUID and receipt snapshot. Receive movements are append-only and tenant-unique per operation; every receipt creates one batch and exactly one movement atomically. Receipt snapshots contain public catalogue IDs/exact quantity strings, never credentials or staff PII. Future balance changes must still use StockService and write new movements; no online sale/adjustment endpoint is enabled here.
+
+### S4g correction ledger metadata (additive migration 000013)
+stock_movements adds nullable request_fingerprint CHAR(64), reason TEXT with encrypted model cast, and approved_by unsignedBIGINT with composite (business_id,approved_by) FK to users. No quantity column/type changes. Adjustment receipt is stored as an empty JSON array and exposed as null; original receive snapshots are unchanged. Unique tenant operation IDs cover receipts and corrections together. Fingerprints include canonical reviewed balance/target/delta/reason; attribution remains public-only in resources.
+
+## S6 till schema
+Additive migration 000014 creates till_sessions (till_ public IDs, composite branch/cashier/approver tenant FKs, integer float/count, signed expected/variance, revision, close limit snapshot, persistent owner-review flag, UTC timestamps). Generated nullable open_cashier_id enforces one open session per business/branch/cashier in MySQL. Shop lock serializes business-wide plan capacity. till_cash_entries (tce_) stores append-only positive integer amounts by cash domain type, encrypted nullable reason, unique tenant operation UUID and fingerprint, with composite till/user ownership. till_operations stores immutable actor/device-bound fingerprints and encrypted replay payloads; unique tenant operation UUID prevents double opening/paid-out/close. No sales/payment records are created by this migration.
+
+## S15 additive return journals (migration 000017)
+
+`product_batches.source_batch_id` nullable composite tenant/product FK to original batch for returned quarantine stock. `sale_items` adds `(business_id,sale_id,id)` ownership unique index.
+
+` sale_returns `: tenant/public ID; original sale; actor/device/approver/own till composite tenant FKs; tenant-unique operation UUID and request fingerprint; encrypted reason; bounded unsigned refund_total/debt_reduction/cash_refund/cash_collected/cash_paid; immutable JSON original-value logical lines; created_at. Unique tenant/id and tenant/sale/id support child ownership. No updates/deletes.
+
+` sale_return_items `: tenant/public ID; sale/return/source sale_item composite ownership FKs; product/target batch composite FK; positive exact signed qty_atoms; created_at. Each source allocation's cumulative return cannot exceed its sale quantity under the business lock. Append-only stock restoration allocations identify original versus quarantine destination.
+
+` sale_exchanges `: tenant/public ID; unique return and unique replacement sale composite tenant FKs; created_at. Append-only link inserted in the same outer return transaction. Original sale snapshots remain immutable. Return status comes from allocations, invoice reductions are journaled by return debt_reduction and applied only in DebtService.
+
+## S12 payment extensions — migrations 000018–000021
+mobile_payment_notifications is append-only tenant/payment/notification identity, deduplicated independently of signature timestamp. sale_payments.mobile_payment_id and customer_payments.mobile_payment_id uniquely reference verified payments. mobile_payments.sale_id/customer_payment_id are one-use allocation links; application purpose guards disallow cross-consumption. customer_payments receives a composite business/id unique key before the payment link; migration 000021 can resume its partial additive step safely.
+
+manual_mobile_refunds is an append-only tenant/owner/device/approver/payment record with unique tenant operation and external-reference hash, immutable fingerprint, amount, encrypted reference/reason and one full resolution per unallocated payment. sale_returns adds unsigned mobile_refund and encrypted mobile_refund_reference plus tenant-unique reference hash. Both refund services lock the business and check references across both journals. No provider payout or drawer entry is generated by a mobile refund record.
+
+
+## POS/product-tools migrations 000022–000026
+000022 adds tenant held_carts and immutable held_cart_operations with branch/user/device composite ownership, encrypted drafts/results, 24-hour expiry and unique tenant UUID journals. 000023 adds nullable tenant-owned discount_approved_by and encrypted discount_reason to immutable sales; exact gross/line/cart/net price snapshots remain in lines JSON.
+000024 adds append-only product_price_histories with product, actor and optional packaging ownership (business_id/product_id/packaging_id references the existing packaging triple unique key). Initial/old/new integer prices and exact package conversion/version snapshots are recorded in the catalogue transaction.
+000025 adds optional private image path/MIME/bytes/dimensions to products and tenant product_image_cleanups. Random tenant objects are referenced only after successful upload; optimistic revision prevents stale replacement; durable cleanup retries do not remove currently referenced objects, including archived-product images.
+000026 adds immutable catalogue_import_operations with tenant UUID, actor/device, request fingerprint and saved result. Per-row deterministic receipt UUIDs and outer StockService transaction prevent partial/duplicate opening stock. Operational data was not reset.
+
+
+## Coordinated operations journals (migrations 000027–000033)
+
+Supplier tables store directory records, owner-issued purchase orders, accepted delivery invoices, invoice allocations, payment records, stock returns, issued credit notes and immutable actor/device operation fingerprints. A purchase order has no payable or stock effect. Invoice receipt snapshots retain exact base quantities and original costs. Credit allocations distinguish issued credits from expected return credits. Tenant composite foreign keys bind every linked resource.
+
+Expenses, expense reversals and expense payment/refund journals retain separate occurrence, reversal and payment dates. Descriptions, reasons and external references are encrypted. `financial_operations` stores encrypted results and an immutable tenant/actor/device UUID fingerprint. `cash_drops` freezes handover fields and retains acknowledgement/reversal projections alongside append-only till entries. `sale_items.cost_price` snapshots original allocation costs; legacy null values use their immutable original batches.
+
+Pricing rules and targets retain schedule/offer windows, priorities and selected products, packaging or batches; operation and consumption journals bind previews and exact markdown capacity. Schedule lifecycle history records activation/end only once. Attendance retains original server stamps and versioned corrections; notification preferences/notices are tenant and staff scoped.
+
+Offline leases retain encrypted signing secrets and catalogue snapshots, approved device/user/original till, exact 24-hour validity and revocation. Offline operations retain encrypted immutable bodies, captured times, conflicts and owner reconciliation results. Sales retain `occurred_at` and `is_offline`; original closed till records are unchanged during reconciliation.
+
+Incentive configurations and sale accounts retain historical earning terms. Entries store cumulative paid net value and exact point/commission deltas; redemption/restoration and external commission payout journals are append-only. Expense attachments retain encrypted tenant-private paths, content metadata, actor/device UUID fingerprints and durable pending/linked/removed/deleting/deleted cleanup state. Public APIs expose prefixed public IDs and validated content only.
+
+## Coordinated remaining-software journals (F17–F20, migrations 000034–000039)
+
+This section describes current additive code and supersedes earlier draft/pending descriptions for these tables. Executed verification and deployment status remain in the batch checklist/handoff; schema presence is not evidence of a successful migration or production launch.
+
+### F19 classified stock loss, physical counts and alerts
+
+Migration `000034_create_loss_alerts` adds tenant-scoped `loss_alerts`: public ULID, staff `user_id`, `kind`, Tanzania `event_date`, JSON `evidence`, nullable `acknowledged_at`/`acknowledged_by` and timestamps. Unique `(business_id,user_id,kind,event_date)` deduplicates each configured threshold crossing; composite tenant/user foreign keys bind the staff and acknowledging owner. Evidence retains the original observed value and threshold; acknowledgement does not rewrite it.
+
+No second stock ledger is introduced. Existing append-only `stock_movements` record `stock_loss` and `stock_count`, retaining exact atom changes/balances and immutable receipt classification snapshots. Loss snapshots include damage/spoilage/wastage category, product/base unit, original cost, exact integer loss value and department attribution. Count snapshots retain selected department and exact physical count, including zero-variance accepted counts. Existing expected-balance checks, actor/device operation fingerprints, owner grants for stockkeepers and `StockService` transactions remain authoritative. Owner-configured nullable daily refund-count/refund-value/void-count thresholds live in business settings; they start disabled.
+
+Department/till reports introduce no projection tables. They read existing immutable sale/return, allocation-cost, till-entry and cash-drop journals. Department financial classification uses current product assignments, explicitly labelled as such; loss/count department snapshots retain event attribution. Stock valuation is business-wide because batches have no branch ownership.
+
+### F18 statement evidence and supplier plans
+
+Migration `000035_create_bank_reconciliation` adds tenant-scoped `bank_statement_lines` (`bank_`): actor, encrypted account label/reference, `booked_on`, debit/credit direction, bounded unsigned integer amount, account/reference `identity_hash`, nullable `matched_type`/`matched_id` and created timestamp. Unique tenant identity prevents duplicate evidence; unique `(business_id,matched_type,matched_id)` prevents matching one completed payment twice. Statement source fields are immutable. Match targets are validated/locked tenant-owned supplier or expense payment rows in the service; this polymorphic match has no cross-table foreign key.
+
+The same migration adds `supplier_payment_schedules` (`sched_`): actor, selected `invoice_id`, `due_on`, integer amount, scheduled/cancelled status and timestamps. Actor/invoice links use composite tenant foreign keys. Plans do not reserve money or alter invoice balances. Current invoice remaining amount is displayed separately; cancellation retains the plan. Both banking and scheduling reuse encrypted actor/device-bound `supplier_operations` UUID results/fingerprints. Last-three purchase-price comparisons read existing immutable invoice-line snapshots and add no price table.
+
+### F17 configured scales and QR cards
+
+The two additive `000036` migrations add `scale_label_profiles` (`scale_`) and `loyalty_cards` (`card_`). Each retains tenant, public ULID, originating user/device, tenant-unique operation UUID, fingerprint and timestamps. Profile rows retain nullable JSON field positions for EAN-13 integer-gram labels; null disables labels, and prior configuration versions remain stored. No default physical hardware format is inferred.
+
+Card rows additionally retain customer, encrypted random token, token hash and active/revoked state. Unique `(business_id,token_hash)` supports tenant-scoped lookup without plaintext searches; `(business_id,customer_id,active)` supports replacement revocation. These two migrations use restrictive resource foreign keys; their scoped models and locked services also validate tenant ownership. Card issuance changes no credit, points, stock or financial journal. The customer display is an ephemeral same-computer browser popout with no database/storage projection; commission ranking reads existing earning/reversal journals without adding a leaderboard table.
+
+### F20 platform and subscription journals
+
+Migration `000037_create_platform_administration` adds global `admin_users`, separate from tenant staff: unique email, hashed password, encrypted authenticator secret, active flag, remember-token and timestamps. `admin_totp_steps` stores only secret HMAC and last accepted timestep for transactional replay prevention. These global platform tables have no tenant model scope because they do not contain `business_id`.
+
+Tenant-scoped `subscriptions` (`sub_`) retain one row per business, plan, UTC start/end instants, status, revision and timestamps. The chosen Tanzania end date becomes an exclusive midnight boundary. `subscription_payments` retain subscription, bounded integer amount, cash/bank/mobile method, encrypted completed-payment reference, tenant-unique reference hash, paid timestamp and platform administrator attribution. Composite business/subscription ownership is enforced; payment records are immutable and never execute transfers.
+
+Global append-only `platform_operations` retain unique UUID, administrator, action, fingerprint, encrypted input/result and created timestamp. Migration `000039_add_platform_operation_evidence` additively supplies nullable encrypted-input storage when upgrading a schema that already lacked it; rollback retains evidence. Global Pennant `features` rows have unique name/scope, stored value and timestamps; evaluation uses explicit business scopes. Plan `features`/`limits` and business-settings overrides remain the configured sources. Existing unmanaged local businesses retain current behavior until explicitly managed; no paid tier is inferred. TRA remains false.
+
+### F20 consent and durable delivery
+
+Migration `000038_create_message_delivery` adds tenant-scoped `customer_message_consents`: public ULID, customer, channel/purpose booleans, revision, recording staff, encrypted evidence and timestamps; one row per tenant/customer with composite tenant ownership.
+
+`message_deliveries` (`msg_`) retain hashed source event key, channel/purpose, nullable customer/owner recipient links, encrypted phone/message snapshots, status, globally unique nullable provider ID, failure code, dispatch/acceptance/delivery timestamps and normal timestamps. Unique `(business_id,event_key,channel)` deduplicates source messages independently of UI operation UUIDs. Composite tenant recipient links and immutable source snapshots preserve attribution. Only delivery state/evidence fields can change. Acceptance and confirmed delivery are distinct states.
+
+`messaging_operations` retain tenant-unique UUID, actor/device composite ownership, fingerprint, encrypted replay result and created timestamp. Append-only `message_provider_events` retain tenant, provider ID, authenticated delivered/failed status and receipt timestamp, unique per tenant/provider/status. They persist signed early WhatsApp evidence before the send response has recorded its provider mapping, then apply it under a delivery row lock. Read callbacks normalize to delivered; later failures cannot regress delivered state. Conflicting provider IDs become uncertain instead of creating duplicate accepted mappings. No raw provider payload or secret is journaled.
+
+SMS reconciliation needs no additional table: accepted SMS retain the unique `beem:` provider mapping and encrypted original recipient; allowed mutable `updated_at` provides a durable five-minute GET claim. Matched authenticated reports set delivered state/local verification time or failed evidence under a fresh row lock. Pending/error/mismatch keeps accepted state, and terminal/cancelled rows cannot be overwritten or resent. The GSM guard blocks unverified Unicode before transport without altering immutable message text.
+
+### Explicit completed-void evidence without a migration
+
+Optional return `operation_kind: void` is bound into the existing approval snapshot/fingerprint after Laravel verifies every remaining original quantity and disallows exchanges. Ordinary omitted-kind snapshots remain unchanged. The normal immutable `sale_returns`/`sale_return_items` and `sale_returned` audit remain the refund journals; a committed void additionally writes exactly one tenant-scoped `sale_voided` activity on that return, with public sale/return/branch/approval attribution. Operation replay writes neither stock/cash nor another audit. `void_count` reads this explicit evidence; ordinary full refunds are not inferred to be voids. See F03-completed-void-audit.

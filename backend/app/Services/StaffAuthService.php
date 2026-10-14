@@ -97,6 +97,7 @@ class StaffAuthService
             $user->pin_hash = $newPin;
             $user->must_change_pin = false;
             $user->save();
+            \App\Models\OfflineLease::where('user_id',$user->id)->whereNull('revoked_at')->update(['revoked_at'=>now()]);
             $user->tokens()->delete();
             AuthChallenge::where('user_id', $user->id)->whereKeyNot($challenge->id)->delete();
             return $this->advance($user, $device, $challenge, $plain);
@@ -115,6 +116,7 @@ class StaffAuthService
             $target->failed_pin_attempts = 0;
             $target->locked_until = null;
             $target->save();
+            \App\Models\OfflineLease::where('user_id',$target->id)->whereNull('revoked_at')->update(['revoked_at'=>now()]);
             $target->tokens()->delete();
             AuthChallenge::where('user_id', $target->id)->delete();
             \App\Models\SupervisorApproval::revokeFor($target);

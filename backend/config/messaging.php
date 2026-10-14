@@ -1,0 +1,2 @@
+<?php
+return ['business_public_id'=>env('MESSAGING_BUSINESS_PUBLIC_ID'),'whatsapp'=>['token'=>env('WHATSAPP_ACCESS_TOKEN'),'phone_number_id'=>env('WHATSAPP_PHONE_NUMBER_ID'),'version'=>env('WHATSAPP_GRAPH_VERSION'),'app_secret'=>env('WHATSAPP_APP_SECRET'),'verify_token'=>env('WHATSAPP_VERIFY_TOKEN'),'template'=>env('WHATSAPP_TEMPLATE_NAME'),'language'=>env('WHATSAPP_TEMPLATE_LANGUAGE','en_US')],'sms'=>['key'=>env('BEEM_API_KEY'),'secret'=>env('BEEM_API_SECRET'),'sender'=>env('BEEM_SENDER_NAME')]];

@@ -1,0 +1,11 @@
+# Completed receipt void evidence
+
+The existing F03 POS **Void remaining receipt items** shortcut now records explicit void intent rather than an indistinguishable ordinary return. This preserves all existing full-refund, debt-first settlement, stock restoration/quarantine, supervisor approval and externally completed mobile-refund rules. The immutable original receipt remains unchanged. Mobile-settled exchanges remain deferred.
+
+Return preview/commit accept optional `operation_kind: return|void`. Omission retains ordinary-return behavior and historical review/operation fingerprints. Explicit void intent is bound into the server review hash and supervisor snapshot; it cannot be changed after approval. Void requests cannot contain a replacement sale. Laravel verifies every still-unreturned original base-unit quantity and every remaining line, including weighed goods; partial selections or omitted remaining lines are rejected with `VOID_QUANTITY_REQUIRED`. Already fully returned lines are omitted.
+
+The normal return journal and `sale_returned` audit remain authoritative for refund accounting. A successful explicit void additionally writes exactly one tenant-scoped `sale_voided` audit on the return record inside the same transaction. Its actor/sale/branch/return/approval attribution feeds the existing configured `void_count` alert evaluator. Immutable-operation retries return before writing another audit; ordinary full refunds do not become suspicious voids by inference. No migration is needed.
+
+The client shortcut selects full remaining quantities and carries void intent. Editing quantities or selecting an exchange restores ordinary-return intent; private uncertain operations retain their exact request. New meaningful backend cases in `SaleReturnTest.php` cover threshold generation and tenant isolation, idempotent void audit, review-kind tampering, ordinary-refund exclusion, partial/omitted-line rejection and replacement rejection. Frontend coverage in `returns-live.test.tsx` verifies explicit shortcut intent and intent clearing. Backend checks await the lead agent's exclusive database window.
+
+Focused frontend return checks pass all seven cases (8.05 seconds). Return service/backend tests pass PHP syntax checks; diff whitespace checks pass. These checks do not substitute for the required guarded backend financial suite.

@@ -41,6 +41,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
+          if (/\/dexie\//.test(id)) return "offline-storage";
           if (/\/(recharts|d3-[^/]+|victory-vendor)\//.test(id))
             return "charts";
           if (/\/(@mui|@emotion)\//.test(id)) return "mui";

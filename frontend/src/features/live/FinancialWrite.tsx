@@ -1,0 +1,3 @@
+import { useFinancialWrite } from './useFinancialWrite';
+import { translate as t } from '../../i18n';
+export function FinancialRetry({state}:{state:ReturnType<typeof useFinancialWrite>}){return <>{state.error&&<p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}{state.pending&&<div className="my-3 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-sm">{t('A financial action is awaiting confirmation. Retry the same saved operation before starting another.')}</p><button disabled={state.busy} onClick={()=>void state.commit(state.pending!)} className="mt-2 rounded-lg border px-3 py-2 text-sm">{t('Retry saved action')}</button></div>}</>;}

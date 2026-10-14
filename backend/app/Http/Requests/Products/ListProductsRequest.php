@@ -6,7 +6,10 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class ListProductsRequest extends FormRequest
 {
-    public function authorize(): bool { return $this->user() !== null; }
+    public function authorize(): bool
+    {
+        return $this->user() !== null && ((! $this->filled('low_stock') && ! $this->filled('expiring_in')) || $this->user()->can('receive_stock'));
+    }
 
     public function rules(): array
     {
@@ -15,7 +18,8 @@ class ListProductsRequest extends FormRequest
             'search' => ['sometimes', 'nullable', 'string', 'max:160'],
             'category' => ['sometimes', 'nullable', 'string', 'max:100'],
             'barcode' => ['sometimes', 'nullable', 'string', 'max:100', 'regex:/^[!-~]+$/D'],
-            'low_stock' => ['prohibited'], 'expiring_in' => ['prohibited'], 'department_id' => ['prohibited'],
+            'low_stock' => ['sometimes', 'boolean'], 'expiring_in' => ['sometimes', 'integer', 'min:0', 'max:365'],
+            'department_id' => ['sometimes', 'nullable', 'string', 'regex:/^dep_[0-9A-HJKMNP-TV-Z]{26}$/D'],
         ];
     }
 }

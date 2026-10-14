@@ -14,6 +14,14 @@ test('Laravel isolates shop authentication and revokes logout tokens', async ({ 
   const { data } = await login.json();
   expect(data.user.role).toBe('cashier');
   const authorized = { ...headers, Authorization: `Bearer ${data.token}` };
+  const unavailable = await request.get('/api/v1/payments/capabilities', { headers });
+  expect(unavailable.status()).toBe(401);
+  expect(unavailable.headers()['cache-control']).toContain('no-store');
+  const capabilities = await request.get('/api/v1/payments/capabilities', { headers: authorized });
+  expect(capabilities.status()).toBe(200);
+  expect(capabilities.headers()['cache-control']).toContain('no-store');
+  expect((await capabilities.json()).data).toEqual({ provider:'selcom',configured:false,enabled:false,reason:'merchant_setup_required' });
+
   expect((await request.get('/api/v1/me', { headers: authorized })).status()).toBe(200);
   expect((await request.get('/api/v1/users', { headers: authorized })).status()).toBe(403);
   const approval = await request.post('/api/v1/auth/supervisor-check', { headers: authorized, data: {

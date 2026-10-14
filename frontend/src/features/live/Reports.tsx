@@ -1,0 +1,37 @@
+import {downloadReportCsv as download} from './reportCsv';
+import {LossReportPanels} from './LossReportPanels';
+import {useState} from 'react';
+
+import {SectionCard} from '../../components/ui/Primitives';
+
+import {errorMessage} from './api';
+
+import {useReportSummaryQuery,useReportSalesQuery,useReportStockQuery} from './financeApi';
+
+import {Expenses} from './Expenses';
+
+import {useLanguage,translate as t} from '../../i18n';
+
+const money=(n:number)=>n===undefined?'—':`TSh ${n.toLocaleString('en-TZ')}`;
+
+function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Dar_es_Salaam',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+
+const input='rounded-lg border border-slate-200 px-3 py-2 text-sm';
+
+export function Reports(){useLanguage();const[tab,setTab]=useState('summary');const[from,setFrom]=useState(today);const[to,setTo]=useState(today);const[filters,setFilters]=useState({from:today(),to:today(),page:1});const summary=useReportSummaryQuery(filters,{skip:tab!=='summary',refetchOnMountOrArgChange:true});const sales=useReportSalesQuery(filters,{skip:tab!=='sales',refetchOnMountOrArgChange:true});const stock=useReportStockQuery(filters,{skip:tab!=='stock',refetchOnMountOrArgChange:true});const active=tab==='sales'?sales:tab==='stock'?stock:summary;
+
+ return <div className="space-y-5 p-4 lg:p-6"><div className="flex flex-wrap gap-2">{['summary','sales','stock','departments','tills','losses','alerts','expenses'].map(key=><button key={key} aria-pressed={tab===key} onClick={()=>setTab(key)} className={`rounded-xl px-4 py-2 text-sm font-medium ${tab===key?'bg-emerald-500 text-white':'border border-slate-200 bg-white'}`}>{t({summary:'Profit & cash flow',sales:'Sales ledger',stock:'Stock valuation',departments:'Departments',tills:'Till reports',losses:'Damage & wastage',alerts:'Activity alerts',expenses:'Expenses'}[key]!)}</button>)}</div>{tab==='expenses'?<Expenses/>:<>{tab!=='alerts'&&<SectionCard title={t('Report period')}><form className="flex flex-wrap items-end gap-3" onSubmit={e=>{e.preventDefault();if(filters.from===from&&filters.to===to&&filters.page===1&&!active.isUninitialized)void active.refetch();setFilters({from,to,page:1});}}><label className="text-sm">{t('From')}<input type="date" required value={from} onChange={e=>setFrom(e.target.value)} className={'ml-2 '+input}/></label><label className="text-sm">{t('To')}<input type="date" required value={to} onChange={e=>setTo(e.target.value)} className={'ml-2 '+input}/></label><button className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-white">{t('Run report')}</button></form><p className="mt-3 text-xs text-slate-500">{t('Dates use Tanzania time. Sales, refunds and expenses keep their own event dates. Stock valuation shows the current recorded balances.')}</p></SectionCard>}{active.isFetching&&<p role="status">{t('Loading report…')}</p>}{active.error&&<p role="alert" className="text-red-600">{errorMessage(active.error)}</p>}{['departments','tills','losses','alerts'].includes(tab)&&<LossReportPanels key={tab+filters.from+filters.to} tab={tab} filters={filters}/>}{tab==='summary'&&summary.currentData&&!summary.error&&<><SectionCard title={t('Profit & cash flow')}><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[['Net sales','net_revenue'],['Cost of goods sold','net_cogs'],['Gross profit','gross_profit'],['Expenses','net_expenses'],['Stock loss cost','stock_loss_cost'],['Commission accrual','commission_accrual'],['Net profit','net_profit'],['Cash received','cashflow_in'],['Cash paid','cashflow_out'],['Net cash flow','net_cashflow'],['Output VAT','net_output_vat']].map(([label,key])=><div key={key} className="rounded-xl border border-slate-100 p-4"><p className="text-xs text-slate-500">{t(label)}</p><p className="mt-2 break-all text-lg font-bold text-slate-800">{money(summary.currentData!.summary[key])}</p></div>)}</div><p className="mt-4 text-xs text-slate-500">{t('VAT is a bookkeeping summary of saved receipts. This is not a tax filing or TRA integration.')}</p>{summary.currentData.summary.legacy_cost_allocations>0&&<p className="mt-2 text-xs text-amber-700">{t('Older sale costs use their original recorded batch costs.')}</p>}<button className={'mt-4 '+input} onClick={()=>download('bizismart-report.csv',[['Metric','Value','Unit'],...Object.entries(summary.currentData!.summary).map(([key,value])=>[key,value,['sale_count','legacy_cost_allocations'].includes(key)?'count':'TSh'])])}>{t('Export report (CSV)')}</button></SectionCard><SectionCard title={t('Current balances')}><p className="text-sm">{t('Customer debt')}: {money(summary.currentData.outstanding_customer_debt)}</p><p className="text-sm">{t('Recorded stock value')}: {money(summary.currentData.stock.recorded_value)}</p><p className="text-sm">{t('Sellable stock value')}: {money(summary.currentData.stock.sellable_value)}</p><p className="text-sm">{t('Held stock value')}: {money(summary.currentData.stock.held_value)}</p>{summary.currentData.stock.negative_batches>0&&<p role="alert" className="text-amber-700">{t('Negative stock conflicts are excluded from physical valuation.')}</p>}</SectionCard></>}
+
+ {tab==='sales'&&sales.currentData&&!sales.error&&<SectionCard title={t('Sales ledger')}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Receipt','Branch','Cashier','Total','VAT'].map(label=><th key={label} className="p-3 text-left">{t(label)}</th>)}</tr></thead><tbody>{sales.currentData.sales.map(s=><tr key={s.id} className="border-t"><td className="p-3">{s.receipt_number}</td><td className="p-3">{s.branch}</td><td className="p-3">{s.cashier}</td><td className="p-3">{money(s.total)}</td><td className="p-3">{money(s.vat_amount)}</td></tr>)}</tbody></table></div><button className={'mt-3 '+input} onClick={()=>download('bizismart-sales-page.csv',[['Receipt','Branch','Cashier','Gross','VAT','Net'],...sales.currentData!.sales.map(s=>[s.receipt_number,s.branch,s.cashier,s.total,s.vat_amount,s.net_revenue])])}>{t('Export this page (CSV)')}</button></SectionCard>}
+
+ {tab==='stock'&&stock.currentData&&!stock.error&&<SectionCard title={t('Stock valuation')}><div className="space-y-3">{stock.currentData.stock.map(s=><div key={s.id} className="flex flex-wrap justify-between gap-3 rounded-xl border p-3"><div><p className="font-medium">{s.product_name} · {s.batch_number}</p><p className="text-xs text-slate-500">{s.qty} {s.unit} · {t(s.status)}</p></div><span>{money(s.value)}</span></div>)}</div><button className={'mt-3 '+input} onClick={()=>download('bizismart-stock-page.csv',[['Product','Batch','Quantity','Unit','Cost','Value','Status'],...stock.currentData!.stock.map(s=>[s.product_name,s.batch_number,s.qty,s.unit,s.cost_price,s.value,s.status])])}>{t('Export this page (CSV)')}</button></SectionCard>}
+
+ {['sales','stock'].includes(tab)&&<div className="flex gap-3"><button disabled={filters.page===1} className={input} onClick={()=>setFilters({...filters,page:filters.page-1})}>{t('Previous')}</button><span className="p-2 text-sm">{t('Page')} {filters.page}</span><button disabled={tab==='sales'? !sales.currentData||filters.page*sales.currentData.meta.per_page>=sales.currentData.meta.total:!stock.currentData||filters.page*stock.currentData.meta.per_page>=stock.currentData.meta.total} className={input} onClick={()=>setFilters({...filters,page:filters.page+1})}>{t('Next')}</button></div>}</> }</div>;
+
+}
+
+
+
+
+
+

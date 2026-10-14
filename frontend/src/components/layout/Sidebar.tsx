@@ -1,3 +1,4 @@
+import { translate, useLanguage } from '../../i18n';
 import type { NavigationStore } from './types';
 import type { Screen } from '@/types';
 import {
@@ -41,13 +42,14 @@ interface Props {
 }
 
 export function Sidebar({ screen, onNavigate, open, onClose, store }: Props) {
+  useLanguage();
   const visibleItems = allNavItems.filter(item => store.canAccessScreen(item.id));
   const user = store.currentUser!;
 
   return (
     <>
       {open && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={onClose} />}
-      <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-slate-900 text-slate-300 transition-transform lg:static lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-slate-900 text-slate-300 transition-transform lg:static lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500">
@@ -55,7 +57,7 @@ export function Sidebar({ screen, onNavigate, open, onClose, store }: Props) {
             </div>
             <div>
               <span className="text-base font-bold text-white">BiziSmart</span>
-              <span className="block text-[10px] uppercase tracking-wider text-slate-500">Supermarket POS</span>
+              <span className="block text-[10px] uppercase tracking-wider text-slate-500">{translate("Supermarket POS")}</span>
             </div>
           </div>
           <button onClick={onClose} className="lg:hidden"><X className="h-5 w-5" /></button>
@@ -71,7 +73,7 @@ export function Sidebar({ screen, onNavigate, open, onClose, store }: Props) {
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${active ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
               >
                 <Icon className="h-5 w-5 shrink-0" />
-                {item.label}
+                {translate(item.label)}
               </button>
             );
           })}
@@ -83,10 +85,10 @@ export function Sidebar({ screen, onNavigate, open, onClose, store }: Props) {
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-white">{user.name}</p>
-              <p className="truncate text-xs text-slate-500">{user.role}</p>
+              <p className="truncate text-xs text-slate-500">{translate(user.role)}</p>
             </div>
             <button onClick={store.logout} className="rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white">
-              Logout
+              {translate("Logout")}
             </button>
           </div>
         </div>

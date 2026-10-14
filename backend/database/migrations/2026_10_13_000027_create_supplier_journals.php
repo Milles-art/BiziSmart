@@ -1,0 +1,19 @@
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+return new class extends Migration {
+    private function base(Blueprint $t):void {$t->id();$t->char('public_id',26)->unique();$t->unsignedBigInteger('business_id');$t->unique(['business_id','id']);}
+    private function link(Blueprint $t,string $column,string $table,bool $nullable=false):void {$field=$t->unsignedBigInteger($column);if($nullable)$field->nullable();$t->foreign(['business_id',$column])->references(['business_id','id'])->on($table)->restrictOnDelete();}
+    public function up():void {
+        Schema::create('suppliers',function(Blueprint $t){$this->base($t);$t->text('name');$t->text('phone')->nullable();$t->text('address')->nullable();$t->boolean('is_active')->default(true);$t->unsignedInteger('revision')->default(0);$t->timestamps();});
+        Schema::create('supplier_orders',function(Blueprint $t){$this->base($t);$this->link($t,'supplier_id','suppliers');$this->link($t,'actor_id','users');$t->text('lines');$t->string('status',16)->default('draft');$t->unsignedBigInteger('total');$t->unsignedInteger('revision')->default(0);$t->timestamp('issued_at')->nullable();$t->timestamps();});
+        Schema::create('supplier_invoices',function(Blueprint $t){$this->base($t);$this->link($t,'supplier_id','suppliers');$this->link($t,'order_id','supplier_orders',true);$this->link($t,'actor_id','users');$t->text('invoice_reference');$t->char('invoice_hash',64);$t->unsignedBigInteger('original_amount');$t->unsignedBigInteger('remaining_amount');$t->text('lines');$t->date('invoice_date');$t->timestamp('created_at')->useCurrent();$t->unique(['business_id','supplier_id','invoice_hash']);});
+        Schema::create('supplier_returns',function(Blueprint $t){$this->base($t);$this->link($t,'supplier_id','suppliers');$this->link($t,'invoice_id','supplier_invoices');$this->link($t,'actor_id','users');$t->text('lines');$t->text('reason');$t->unsignedBigInteger('expected_credit');$t->timestamp('created_at')->useCurrent();});
+        Schema::create('supplier_credits',function(Blueprint $t){$this->base($t);$this->link($t,'supplier_id','suppliers');$this->link($t,'return_id','supplier_returns');$this->link($t,'actor_id','users');$t->text('reference');$t->char('reference_hash',64);$t->unsignedBigInteger('amount');$t->unsignedBigInteger('remaining_amount');$t->timestamp('created_at')->useCurrent();$t->unique(['business_id','return_id']);$t->unique(['business_id','supplier_id','reference_hash']);});
+        Schema::create('supplier_payments',function(Blueprint $t){$this->base($t);$this->link($t,'supplier_id','suppliers');$this->link($t,'actor_id','users');$this->link($t,'till_session_id','till_sessions',true);$t->string('source',16);$t->unsignedBigInteger('amount');$t->text('reference');$t->char('reference_hash',64);$t->date('paid_on');$t->timestamp('created_at')->useCurrent();$t->unique(['business_id','supplier_id','reference_hash']);});
+        Schema::create('supplier_allocations',function(Blueprint $t){$this->base($t);$this->link($t,'supplier_id','suppliers');$this->link($t,'invoice_id','supplier_invoices');$this->link($t,'payment_id','supplier_payments',true);$this->link($t,'credit_id','supplier_credits',true);$t->unsignedBigInteger('amount');$t->timestamp('created_at')->useCurrent();});
+        Schema::create('supplier_operations',function(Blueprint $t){$this->base($t);$this->link($t,'actor_id','users');$this->link($t,'device_id','devices');$t->uuid('operation_id');$t->char('request_fingerprint',64);$t->string('action',32);$t->text('result');$t->timestamp('created_at')->useCurrent();$t->unique(['business_id','operation_id']);});
+    }
+    public function down():void {foreach(['supplier_operations','supplier_allocations','supplier_payments','supplier_credits','supplier_returns','supplier_invoices','supplier_orders','suppliers'] as $table)Schema::dropIfExists($table);}
+};
