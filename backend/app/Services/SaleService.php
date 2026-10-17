@@ -205,7 +205,7 @@ class SaleService
         $current = $token ? PersonalAccessToken::whereKey($token->id)->where('tokenable_id', $original->id)->lockForUpdate()->first() : null;
         $device = $current?->device_id ? Device::whereKey($current->device_id)->lockForUpdate()->first() : null;
         if (! $actor || ! $actor->is_active || $actor->must_change_pin || $actor->getRoleNames()->count() !== 1
-            || ($actor->hasRole('owner') && ! $actor->totp_confirmed_at) || ! $current || $current->expires_at?->isPast() || $device?->status !== 'approved') { throw new AuthenticationException; }
+            || ($actor->hasRole('owner') && ! $actor->ownerAuthenticationReady()) || ! $current || $current->expires_at?->isPast() || $device?->status !== 'approved') { throw new AuthenticationException; }
         if (! $actor->can('sell')) { throw new AuthorizationException; }
         return $actor->withAccessToken($current);
     }

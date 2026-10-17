@@ -1,12 +1,10 @@
 <?php
 namespace App\Models;
-use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
-use Filament\Auth\MultiFactor\App\Concerns\InteractsWithAppAuthentication;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-class AdminUser extends Authenticatable implements FilamentUser,HasAppAuthentication {
-    use InteractsWithAppAuthentication;
+class AdminUser extends Authenticatable implements FilamentUser {
+    use \Illuminate\Notifications\Notifiable;
     protected $fillable=['name','email','password','is_active'];
     protected $hidden=['password','remember_token','app_authentication_secret'];
     protected function casts():array{return ['password'=>'hashed','is_active'=>'boolean','app_authentication_secret'=>'encrypted'];}

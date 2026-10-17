@@ -10,14 +10,14 @@ function departmentError(error: unknown) {
   return e.data?.error?.code === 'NOT_FOUND' ? 'This department is no longer available. Refresh the list.' : errorMessage(error);
 }
 
-export function DepartmentPicker({ label, value, onChange, currentName, emptyLabel = 'Unassigned' }: { label: string; value: string; onChange: (id: string) => void; currentName?: string | null; emptyLabel?: string }) {
+export function DepartmentPicker({ label, value, onChange, currentName, emptyLabel = 'Unassigned', compact = false }: { compact?: boolean; label: string; value: string; onChange: (id: string) => void; currentName?: string | null; emptyLabel?: string }) {
   useLanguage();
   const [page, setPage] = useState(1);
   const [chosen, setChosen] = useState<Department | null>(null);
   const { currentData: data, error, isFetching, refetch } = useDepartmentsQuery({ page });
   const rows = data?.departments ?? [];
   const missing = value && !rows.some((row) => row.id === value);
-  return <div><label className="block text-xs text-slate-500">{translate(label)}<select value={value} onChange={(e) => { setChosen(rows.find((row) => row.id === e.target.value) ?? null); onChange(e.target.value); }} className={inputClass}><option value="">{translate(emptyLabel)}</option>{missing && <option value={value}>{chosen?.id === value ? chosen.name : currentName ?? 'Selected department'}</option>}{rows.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
+  return <div><label className="block text-xs text-slate-500"><span className={compact ? 'sr-only' : undefined}>{translate(label)}</span><select value={value} onChange={(e) => { setChosen(rows.find((row) => row.id === e.target.value) ?? null); onChange(e.target.value); }} className={inputClass + (compact ? ' !mt-0 !py-2.5' : '')}><option value="">{translate(emptyLabel)}</option>{missing && <option value={value}>{chosen?.id === value ? chosen.name : currentName ?? 'Selected department'}</option>}{rows.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
     {isFetching && <p role="status" className="mt-1 text-xs text-slate-400">{translate("Loading departments…")}</p>}
     {error && <p role="alert" className="mt-1 text-xs text-red-600">{departmentError(error)} <button type="button" onClick={refetch} className="underline">{translate("Retry departments")}</button></p>}
     {data && data.meta.total > data.meta.per_page && <div className="mt-1 flex justify-between gap-2 text-xs text-slate-500"><button type="button" disabled={page === 1 || isFetching} aria-label={`${label}: previous departments`} onClick={() => setPage(page - 1)} className="disabled:opacity-40">{translate("Previous")}</button><span>{translate("Page")} {page}</span><button type="button" disabled={page * data.meta.per_page >= data.meta.total || isFetching} aria-label={`${label}: next departments`} onClick={() => setPage(page + 1)} className="disabled:opacity-40">{translate("Next")}</button></div>}

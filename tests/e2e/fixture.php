@@ -169,3 +169,17 @@ require __DIR__.'/banking-fixture.php';
 require __DIR__.'/remaining-fixture.php';
 require __DIR__.'/display-fixture.php';
 require __DIR__.'/loss-fixture.php';
+require __DIR__.'/margin-fixture.php';
+
+// The guarded browser fixture uses real email/password authentication. These
+// synthetic credentials never touch operational accounts or mail delivery.
+foreach (Business::orderBy('id')->get() as $emailFixtureBusiness) {
+    app(TenantContext::class)->run($emailFixtureBusiness, function () {
+        foreach (User::orderBy('id')->get() as $emailFixtureUser) {
+            $emailFixtureUser->email = '0'.substr($emailFixtureUser->phone, 3).'@example.test';
+            $emailFixtureUser->password_hash = 'browser-email-password-42';
+            $emailFixtureUser->must_change_pin = false;
+            $emailFixtureUser->save();
+        }
+    });
+}

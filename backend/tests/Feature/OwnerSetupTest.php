@@ -27,6 +27,37 @@ beforeEach(function () {
 
 afterEach(function () { $this->context->clear(); $this->travelBack(); });
 
+it('assigns the sole active tenant branch during initial setup so the enrolled owner can open a till', function () {
+    $this->alpha->plan->update(['limits' => ['tills' => 1]]);
+    $branch = $this->context->run($this->alpha, function () {
+        \App\Models\Branch::create(['name' => 'Inactive', 'is_active' => false]);
+        return \App\Models\Branch::create(['name' => 'Main']);
+    });
+    $this->context->run($this->beta, fn () => \App\Models\Branch::create(['name' => 'Other shop']));
+    $setup = $this->postJson('http://alpha.bizismart.test/api/v1/auth/owner/setup', $this->input)->assertStatus(202);
+    $this->context->run($this->alpha, fn () => expect(User::firstOrFail()->branch_id)->toBe($branch->id));
+    $verified = $this->postJson('http://alpha.bizismart.test/api/v1/auth/totp/verify', [
+        'challenge_token' => $setup->json('data.challenge_token'),
+        'code' => app(Google2FA::class)->getCurrentOtp($setup->json('data.setup_secret')),
+    ])->assertOk();
+    $this->withToken($verified->json('data.token'))->getJson('http://alpha.bizismart.test/api/v1/till-sessions/current')
+        ->assertOk()->assertJsonPath('data.branch.id', $branch->publicId())->assertJsonPath('data.can_open', true);
+    $this->postJson('http://alpha.bizismart.test/api/v1/till-sessions/open', [
+        'operation_id' => (string) \Illuminate\Support\Str::uuid(), 'branch_id' => $branch->publicId(), 'opening_float' => 0,
+    ])->assertCreated()->assertJsonPath('data.till.branch_id', $branch->publicId());
+});
+
+it('does not guess an initial assignment between active branches or use a foreign branch', function (bool $ambiguous) {
+    $this->context->run($this->beta, fn () => \App\Models\Branch::create(['name' => 'Foreign branch']));
+    if ($ambiguous) {
+        $this->context->run($this->alpha, function () {
+            \App\Models\Branch::create(['name' => 'One']); \App\Models\Branch::create(['name' => 'Two']);
+        });
+    }
+    $this->postJson('http://alpha.bizismart.test/api/v1/auth/owner/setup', $this->input)->assertStatus(202);
+    $this->context->run($this->alpha, fn () => expect(User::firstOrFail()->branch_id)->toBeNull());
+})->with([true, false]);
+
 it('requires a tenant scoped invite and stores only its digest', function () {
     $this->context->run($this->alpha, function () {
         $invite = OwnerInvitation::firstOrFail();

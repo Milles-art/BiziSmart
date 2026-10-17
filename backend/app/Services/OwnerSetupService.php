@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\ApiException;
 use App\Models\Business;
+use App\Models\Branch;
 use App\Models\Device;
 use App\Models\OwnerInvitation;
 use App\Models\User;
@@ -42,6 +43,12 @@ class OwnerSetupService
             }
             $this->roles->provision();
             $owner = $template ?? new User;
+            // Platform onboarding already creates Main. Assign only an unambiguous
+            // active branch; never guess between branches or replace a scaffold assignment.
+            if ($owner->branch_id === null) {
+                $branches = Branch::where('is_active', true)->lockForUpdate()->limit(2)->get();
+                if ($branches->count() === 1) { $owner->branch_id = $branches->first()->id; }
+            }
             $owner->fill(['name' => $input['name'], 'phone' => $input['phone'], 'pin_hash' => $input['pin'],
                 'is_active' => true, 'must_change_pin' => false]);
             $owner->save();

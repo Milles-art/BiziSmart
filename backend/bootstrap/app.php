@@ -21,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trimStrings(except: ['reorder_level', 'base_qty', 'barcode', 'qty', 'qty_change', 'expected_qty']);
         $middleware->alias(['permission' => \App\Http\Middleware\RequirePermission::class,
             'staff.session' => \App\Http\Middleware\RequireStaffSession::class,
+            'enterprise.token' => \App\Http\Middleware\RequireEnterpriseToken::class,
             'owner' => \App\Http\Middleware\RequireOwner::class, 'auth.no_store' => \App\Http\Middleware\NoStoreAuth::class]);
         $middleware->prepend(AssignRequestId::class);
         // Livewire uses the web session middleware before panel-persistent middleware.

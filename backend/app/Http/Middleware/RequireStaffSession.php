@@ -16,7 +16,7 @@ class RequireStaffSession
         $token = $user?->currentAccessToken();
         if (! $user || ! $user->is_active || $user->must_change_pin || ! $token?->device_id
             || ! Device::whereKey($token->device_id)->where('status', 'approved')->exists()
-            || $user->getRoleNames()->count() !== 1 || ($user->hasRole('owner') && ! $user->totp_confirmed_at)) {
+            || $user->getRoleNames()->count() !== 1 || ($user->hasRole('owner') && ! $user->ownerAuthenticationReady())) {
             throw new AuthenticationException;
         }
         return $next($request);

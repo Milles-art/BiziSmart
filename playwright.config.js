@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const sharedHosting = process.env.BIZISMART_E2E_SHARED === '1';
+
 export default defineConfig({
   testDir: './tests/e2e',
   globalSetup: './tests/e2e/setup.js',
@@ -25,10 +27,14 @@ export default defineConfig({
   webServer: [
     {
       command: 'npm run dev:api',
-      env: { APP_ENV: 'testing', TENANT_DOMAIN: 'localhost', ADMIN_DOMAIN:'admin.localhost', SESSION_DRIVER:'file', CACHE_LIMITER: 'array' },
+      env: { APP_ENV: 'testing', TENANT_DOMAIN: 'localhost', ADMIN_DOMAIN:'admin.localhost',
+        BIZISMART_HOSTING_PROFILE:sharedHosting?'shared':'standard',
+        SESSION_DRIVER:sharedHosting?'database':'file', CACHE_STORE:sharedHosting?'database':'array',
+        CACHE_LIMITER:sharedHosting?'database':'array', QUEUE_CONNECTION:sharedHosting?'database':'sync' },
       url: 'http://127.0.0.1:18080/api/v1/health',
       reuseExistingServer: false,
-      timeout: 60000,
+      // Allow the bounded cold PHP dependency boot before any test begins.
+      timeout: 180000,
     },
     {
       command: 'npm run dev --workspace frontend -- --host 127.0.0.1',

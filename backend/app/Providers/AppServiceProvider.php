@@ -33,13 +33,18 @@ class AppServiceProvider extends ServiceProvider
         \Illuminate\Support\Facades\RateLimiter::for('staff-login', function (\Illuminate\Http\Request $request) {
             $phone = is_string($request->input('phone')) ? $request->input('phone') : '';
             try { $phone = \App\Support\StaffPhone::normalize($phone); } catch (\InvalidArgumentException) {}
-            $key = hash_hmac('sha256', $phone.'|'.$request->ip(), config('app.key'));
+            $identity = is_string($request->input('email')) ? strtolower(trim($request->input('email'))) : $phone;
+            $key = hash_hmac('sha256', $identity.'|'.$request->ip(), config('app.key'));
             $tenant = app(TenantContext::class)->requireId();
             return [\Illuminate\Cache\RateLimiting\Limit::perMinute(5)->by('business:'.$tenant.':login:'.$key),
                 \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by('business:'.$tenant.':login-ip:'.hash('sha256', $request->ip() ?? ''))];
         });
         \Illuminate\Support\Facades\RateLimiter::for('auth-step', fn (\Illuminate\Http\Request $request) =>
             \Illuminate\Cache\RateLimiting\Limit::perMinute(10)->by(app(TenantContext::class)->cacheKey('auth-step:'.hash('sha256', $request->ip() ?? ''))));
+        \Illuminate\Support\Facades\RateLimiter::for('enterprise', function (\Illuminate\Http\Request $request) {
+            $tokenId = $request->user()?->currentAccessToken()?->getKey() ?? 'anonymous';
+            return \Illuminate\Cache\RateLimiting\Limit::perMinute(120)->by(app(TenantContext::class)->cacheKey('enterprise:'.$tokenId));
+        });
         Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
         Sanctum::authenticateAccessTokensUsing(function ($token, bool $valid): bool {
             return $valid && $token->tokenable instanceof User

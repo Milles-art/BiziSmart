@@ -13,6 +13,9 @@ import {
   netTransaction,
 } from "../src/lib/business";
 import { salesPdf, salesCsv } from "../src/lib/exports";
+// Load the real PDF dependency before beforeEach freezes timers. The test still
+// generates actual PDF bytes; dependency loading must not wait on mocked timers.
+import "jspdf";
 
 let store: Store;
 let renderer: ReactTestRenderer;
@@ -305,7 +308,8 @@ describe("corrected checkout and stock workflows", () => {
         getItem: () => '{"version":2,"business":{"products":4}}',
       }),
     ).toEqual({});
-    expect((await salesPdf([txn], "daily")).output().startsWith("%PDF-")).toBe(
+    const report = await salesPdf([txn], "daily");
+    expect(report.output().startsWith("%PDF-")).toBe(
       true,
     );
     expect(

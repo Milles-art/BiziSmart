@@ -5,16 +5,28 @@ use Illuminate\Support\Facades\Route;
 
 require __DIR__.'/offline.php';
 Route::get('/health', HealthController::class)->name('health');
+Route::get('/ready', \App\Http\Controllers\Api\V1\ReadinessController::class)->middleware('throttle:60,1')->name('ready');
 Route::match(['GET','POST'],'/messaging/whatsapp/webhook',\App\Http\Controllers\Api\V1\WhatsAppWebhookController::class)->middleware('throttle:120,1')->name('messaging.whatsapp.webhook');
 Route::post('/payments/selcom/callback', \App\Http\Controllers\Api\V1\SelcomCallbackController::class)->name('payments.selcom.callback');
 
 Route::middleware('auth.no_store')->group(function () {
+    $emailAuth = \App\Http\Controllers\Api\V1\EmailAuthController::class;
+    Route::post('/auth/email/login', [$emailAuth, 'login'])->middleware('throttle:staff-login');
+    Route::post('/auth/email/setup', [$emailAuth, 'setup'])->middleware('throttle:auth-step');
+    Route::post('/auth/email/forgot-password', [$emailAuth, 'forgot'])->middleware('throttle:staff-login');
+    Route::post('/auth/email/reset-password', [$emailAuth, 'reset'])->middleware('throttle:auth-step');
+    Route::post('/auth/email/activate', [$emailAuth, 'activate'])->middleware('throttle:auth-step');
     $auth = \App\Http\Controllers\Api\V1\AuthController::class;
     Route::post('/auth/login', [$auth, 'login'])->middleware('throttle:staff-login')->name('auth.login');
     Route::post('/auth/owner/setup', [$auth, 'setup'])->middleware('throttle:auth-step');
     Route::post('/auth/totp/verify', [$auth, 'verify'])->middleware('throttle:auth-step')->name('auth.totp.verify');
     Route::post('/auth/pin/change', [$auth, 'changePin'])->middleware('throttle:auth-step')->name('auth.pin.change');
+    Route::middleware(['auth:sanctum'])->group(function () {
+        require __DIR__.'/enterprise.php';
+    });
     Route::middleware(['auth:sanctum', 'staff.session'])->group(function () use ($auth) {
+        Route::post('/auth/email/enrollment', [\App\Http\Controllers\Api\V1\EmailAuthController::class, 'enroll'])->middleware('throttle:auth-step');
+        Route::post('/auth/email/activation-link', [\App\Http\Controllers\Api\V1\EmailAuthController::class, 'activationLink'])->middleware(['owner', 'throttle:auth-step']);
         require __DIR__.'/suppliers.php';
         require __DIR__.'/pricing.php';
         require __DIR__.'/finance.php';

@@ -16,7 +16,10 @@ afterEach(()=>{cleanup();store.dispatch(liveApi.util.resetApiState());vi.unstubA
 function mount(ui:React.ReactNode){return render(<Provider store={store}>{ui}</Provider>);}
 it('shows unconfigured and accepted states without claiming actual delivery',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>response({channels:{whatsapp:{ready:false,reason:'provider_setup_required'},sms:{ready:false,reason:'provider_setup_required'}},deliveries:[{id:'msg_1',channel:'sms',purpose:'receipts',status:'accepted',failure_code:null,created_at:'2026-10-14T09:00:00Z',accepted_at:'2026-10-14T09:00:01Z',delivered_at:null}]})));
- mount(<Messaging/>);await screen.findByText(/sms · receipts · accepted/);expect(screen.getAllByText(/Provider setup required/)).toHaveLength(2);expect(screen.queryByText('delivered',{exact:true})).toBeNull();
+ mount(<Messaging/>);await screen.findByText('sms · receipts');expect(screen.getByText('accepted',{exact:true})).toBeTruthy();expect(screen.getAllByText(/Provider setup required/)).toHaveLength(2);expect(screen.queryByText('delivered',{exact:true})).toBeNull();
+ expect(screen.getByText('Delivered',{selector:'p'}).parentElement?.textContent).toContain('0');
+ fireEvent.click(screen.getByRole('button',{name:'Delivered',exact:true}));expect(screen.queryByText('sms · receipts')).toBeNull();expect(screen.getByText('No delivery records match this filter.')).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Accepted',exact:true}));expect(screen.getByText('sms · receipts')).toBeTruthy();
 });
 it('retains the same request UUID and body through uncertain remount and clears on signout',async()=>{
  const frozen={action:'consent' as const,key:'5c61eaec-a93e-4d36-85a4-68c1a27d08ce',body:{customer_id:'cust_1',expected_revision:0,whatsapp:true,sms:false,receipts:true,debt_reminders:false,evidence:'Customer agreed'}};store.dispatch(messagingActions.submitting(frozen));let attempts=0;const writes:{key:string|null;body:string}[]=[];

@@ -24,21 +24,25 @@ class SupervisorApprovalService
         // Same hash work for unknown or disabled accounts; PIN failures commit even when approval fails.
         $dummy = Hash::make(bin2hex(random_bytes(32)));
         $result = DB::transaction(function () use ($requester, $input, $dummy) {
-            $candidate = User::forPhone($input['phone'])->first();
+            $emailCredentials = isset($input['email'], $input['password']);
+            $candidate = $emailCredentials ? User::forEmail($input['email'])->first() : User::forPhone($input['phone'])->first();
             $users = $this->lockUsers($requester->id, $candidate?->id);
             $actor = $users->get($requester->id);
             $session = $this->session($requester, $actor, $input['permission']);
             $approver = $candidate ? $users->get($candidate->id) : null;
-            $valid = Hash::check($input['pin'], $approver?->pin_hash ?? $dummy);
-            $valid = $valid && (! $approver || hash_equals($approver->phone_lookup, User::phoneLookup($input['phone'])));
-            if (! $approver || ! $approver->is_active) { return $this->invalidPin(); }
+            $valid = Hash::check($emailCredentials ? $input['password'] : $input['pin'],
+                $emailCredentials ? ($approver?->password_hash ?? $dummy) : ($approver?->pin_hash ?? $dummy));
+            $valid = $valid && ($emailCredentials
+                ? ($approver?->usesEmailPassword() && hash_equals($approver->email_lookup, User::emailLookup($input['email'])))
+                : (! $approver || (! $approver->usesEmailPassword() && hash_equals($approver->phone_lookup, User::phoneLookup($input['phone'])))));
+            if (! $approver || ! $approver->is_active) { return $this->invalidPin($emailCredentials); }
             if ($approver->locked_until?->isFuture()) { return $this->locked(); }
             if ($approver->locked_until !== null) { $approver->failed_pin_attempts = 0; $approver->locked_until = null; }
             if (! $valid) {
                 $approver->failed_pin_attempts++;
                 if ($approver->failed_pin_attempts >= 5) { $approver->locked_until = now()->addMinutes(15); }
                 $approver->save();
-                return $approver->locked_until ? $this->locked() : $this->invalidPin();
+                return $approver->locked_until ? $this->locked() : $this->invalidPin($emailCredentials);
             }
             $approver->failed_pin_attempts = 0;
             $approver->locked_until = null;
@@ -48,7 +52,7 @@ class SupervisorApprovalService
                     && ! $this->varianceScope($approver, Branch::find($actor->branch_id)))) {
                 return new ApiException('APPROVER_NOT_AUTHORIZED', $input['permission'] === 'adjust_stock' ? 'An eligible owner must approve this correction.' : 'An eligible owner or manager must approve this action.', 403);
             }
-            if ($approver->hasRole('owner')) {
+            if ($approver->hasRole('owner') && ! $approver->usesEmailPassword()) {
                 if (! isset($input['code'])) { return new ApiException('TOTP_REQUIRED', 'Enter the owner’s authenticator code to approve.', 403); }
                 $step = $this->totp->verifyKeyNewer($approver->totp_secret, $input['code'], $approver->totp_last_step ?? 0, 1, intdiv(now()->timestamp, 30));
                 if ($step === false) { return new ApiException('INVALID_TOTP', 'The authenticator code is invalid or has already been used.', 401); }
@@ -132,7 +136,7 @@ class SupervisorApprovalService
         if (! in_array($permission, self::PERMISSIONS, true)) { throw new ApiException('VALIDATION_ERROR', 'Unsupported approval permission.', 422, 'permission'); }
         $token = $original->currentAccessToken();
         if (! $fresh || ! $fresh->is_active || $fresh->must_change_pin || $fresh->getRoleNames()->count() !== 1
-            || ($fresh->hasRole('owner') && ! $fresh->totp_confirmed_at)) { throw new \Illuminate\Auth\AuthenticationException; }
+            || ($fresh->hasRole('owner') && ! $fresh->ownerAuthenticationReady())) { throw new \Illuminate\Auth\AuthenticationException; }
         $current = $token ? PersonalAccessToken::whereKey($token->id)->where('tokenable_id', $fresh->id)->lockForUpdate()->first() : null;
         if (! $current || ($current->expires_at && ! $current->expires_at->isFuture()) || ! $current->device_id
             || ! Device::whereKey($current->device_id)->where('status', 'approved')->lockForUpdate()->first()) {
@@ -147,7 +151,7 @@ class SupervisorApprovalService
     private function eligible(User $user, string $permission): bool
     {
         return $user->is_active && ! $user->must_change_pin && $user->getRoleNames()->count() === 1
-            && (($permission !== 'adjust_stock' && $user->hasRole('manager')) || ($user->hasRole('owner') && $user->totp_confirmed_at && $user->totp_secret))
+            && (($permission !== 'adjust_stock' && $user->hasRole('manager')) || ($user->hasRole('owner') && ($user->usesEmailPassword() || ($user->totp_confirmed_at && $user->totp_secret))))
             && $user->hasPermissionTo($permission);
     }
     private function snapshotBranch(array $snapshot): ?Branch
@@ -166,6 +170,6 @@ class SupervisorApprovalService
     }
 
     private function invalidApproval(): ApiException { return new ApiException('INVALID_APPROVAL', 'Request a fresh approval for this exact action.', 403); }
-    private function invalidPin(): ApiException { return new ApiException('INVALID_PIN', 'The phone or PIN is incorrect.', 401); }
+    private function invalidPin(bool $email = false): ApiException { return new ApiException($email ? 'INVALID_CREDENTIALS' : 'INVALID_PIN', $email ? 'The email or password is incorrect.' : 'The phone or PIN is incorrect.', 401); }
     private function locked(): ApiException { return new ApiException('ACCOUNT_LOCKED', 'Please try again after 15 minutes.', 423); }
 }

@@ -6,6 +6,8 @@ import {messagingActions,type MessagingState} from './messagingState';
 import {translate,useLanguage} from '../../i18n';
 import {MessagingAutomation} from './MessagingAutomation';
 import {usePlanFeature} from './usePlanFeature';
+import {StatCard,Badge} from '../../components/ui/Primitives';
+import {AlertTriangle,CheckCircle,MessageSquare,XCircle} from 'lucide-react';
 const input='mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm';
 const button='rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40';
 function useWrite(){const dispatch=useDispatch();const store=useStore<{session:SessionState}>();const pending=useSelector((s:{messaging?:MessagingState})=>s.messaging?.pending??null);const [commit]=useMessagingWriteMutation();const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
@@ -20,4 +22,33 @@ export function CustomerMessaging({customerId}:{customerId:string}){useLanguage(
 export function ReceiptMessaging({sale}:{sale:CashSale}){useLanguage();const enabled=usePlanFeature('messaging');const w=useWrite();const [channel,setChannel]=useState<'sms'|'whatsapp'>('whatsapp');const consent=useMessageConsentQuery(sale.customer_id??'',{skip:!sale.customer_id||!enabled});const me=useSelector((s:{session:SessionState})=>s.session);if(!sale.customer_id||!me.token||!enabled)return null;
  return <div className="mt-3 space-y-2 text-sm"><label>{translate('Receipt message channel')}<select disabled={w.locked} value={channel} onChange={e=>setChannel(e.target.value as 'sms'|'whatsapp')} className={input}><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></select></label><button disabled={w.locked||!consent.data?.[channel]||!consent.data.receipts} onClick={()=>void w.save({action:'receipt',key:crypto.randomUUID(),body:{customer_id:sale.customer_id,sale_id:sale.id,channel}})} className={button}>{translate('Queue consented receipt')}</button><p className="text-xs text-slate-500">{translate('Requires customer channel/receipt consent. Queued and accepted do not mean delivered.')}</p>{(w.error||w.notice)&&<p role={w.error?'alert':'status'}>{w.error||translate(w.notice)}</p>}</div>;
 }
-export function Messaging(){useLanguage();const q=useMessageDeliveriesQuery();const w=useWrite();return <section className="m-4 rounded-xl border border-slate-200 bg-white p-4"><h2 className="font-semibold text-slate-800">{translate('WhatsApp & SMS delivery')}</h2>{q.error&&<p role="alert">{errorMessage(q.error)}<button onClick={()=>void q.refetch()} className="ml-3 underline">{translate('Try again')}</button></p>}<p className="mt-2 text-sm text-slate-500">{translate('External credentials, approved templates/sender and scheduler are required. Provider acceptance is not confirmed delivery.')}</p>{q.data&&<><div className="mt-3 flex gap-4 text-sm">{(['whatsapp','sms'] as const).map(c=><p key={c}>{c}: {translate(q.data?.channels[c].ready?'Configured':'Provider setup required')}</p>)}</div>{q.data.automation&&<MessagingAutomation settings={q.data.automation} locked={w.locked} save={w.save}/ >}{(w.error||w.notice)&&<p role={w.error?'alert':'status'}>{w.error||translate(w.notice)}</p>}<div className="mt-4 space-y-2">{q.data.deliveries.map(d=><div key={d.id} className="rounded-lg bg-slate-50 p-3 text-sm"><p>{d.channel} · {d.purpose.replace(/_/g,' ')} · {d.status}</p>{d.failure_code&&<p className="text-xs text-amber-700">{d.failure_code}</p>}<p className="text-xs text-slate-400">{new Date(d.created_at).toLocaleString('en-TZ',{timeZone:'Africa/Dar_es_Salaam'})}</p></div>)}{q.data.deliveries.length===0&&<p className="text-sm text-slate-500">{translate('No delivery records.')}</p>}</div></>}</section>;}
+export function Messaging(){
+ useLanguage();const q=useMessageDeliveriesQuery();const w=useWrite();
+ const [filter,setFilter]=useState('all');
+ const data=q.error?undefined:q.data;
+ const deliveries=data?.deliveries;
+ const filtered=deliveries?.filter(row=>filter==='all'||row.status===filter);
+ return <section className="space-y-5 p-4 lg:p-6"><div className="workflow-heading"><div><h2>{translate("WhatsApp & SMS delivery")}</h2><p>{translate("Review provider setup and track each message through delivery.")}</p></div></div>
+  <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+   <StatCard title="Delivery records shown" value={deliveries?String(deliveries.length):'—'} icon={<MessageSquare className="h-5 w-5 text-white"/>} color="bg-blue-500"/>
+   <StatCard title="Delivered" value={deliveries?String(deliveries.filter(row=>row.status==='delivered').length):'—'} icon={<CheckCircle className="h-5 w-5 text-white"/>} color="bg-emerald-500"/>
+   <StatCard title="Failed" value={deliveries?String(deliveries.filter(row=>row.status==='failed').length):'—'} icon={<XCircle className="h-5 w-5 text-white"/>} color="bg-red-500"/>
+   <StatCard title="Uncertain" value={deliveries?String(deliveries.filter(row=>row.status==='uncertain').length):'—'} icon={<AlertTriangle className="h-5 w-5 text-white"/>} color="bg-amber-500"/>
+  </div>
+  <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+   <h3 className="font-semibold text-slate-800">{translate("Delivery settings")}</h3>
+   {q.isLoading&&<p role="status" className="text-sm text-slate-500">{translate('Loading delivery records…')}</p>}
+   {q.error&&<p role="alert">{errorMessage(q.error)}<button onClick={()=>void q.refetch()} className="ml-3 underline">{translate('Try again')}</button></p>}
+   <p className="text-sm text-slate-500">{translate('External credentials, approved templates/sender and scheduler are required. Provider acceptance is not confirmed delivery.')}</p>
+   {data&&<><div className="flex flex-wrap gap-3 text-sm">{(['whatsapp','sms'] as const).map(channel=><div key={channel} className="flex items-center gap-2 rounded-lg border border-slate-100 px-3 py-2"><span>{channel==='whatsapp'?'WhatsApp':'SMS'}</span><Badge status={data.channels[channel].ready?'Configured':'Provider setup required'} variant={data.channels[channel].ready?'success':'warning'}/></div>)}</div>
+   {data.automation&&<MessagingAutomation settings={data.automation} locked={w.locked} save={w.save}/>}
+   {(w.error||w.notice)&&<p role={w.error?'alert':'status'}>{w.error||translate(w.notice)}</p>}</>}
+  </div>
+  <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+   <h3 className="font-semibold text-slate-800">{translate('Delivery history')}</h3>
+   <p className="text-xs text-slate-500">{translate('Counts and filters cover the delivery records returned, not all historical messages.')}</p>
+   <div className="workflow-tabs" role="group" aria-label={translate("Delivery status")}>{['all','queued','accepted','delivered','failed','uncertain','blocked'].map(value=><button key={value} type="button" aria-pressed={filter===value} onClick={()=>setFilter(value)} className={`rounded-lg px-3 py-1.5 text-sm font-medium ${filter===value?'bg-emerald-500 text-white':'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{translate(value.charAt(0).toUpperCase()+value.slice(1))}</button>)}</div>
+   <div className="space-y-2">{filtered?.map(delivery=><div key={delivery.id} className="rounded-lg border border-slate-100 p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="break-words text-slate-700">{delivery.channel} · {delivery.purpose.replace(/_/g,' ')}</p><Badge status={delivery.status} variant={delivery.status==='delivered'?'success':delivery.status==='failed'?'danger':'neutral'}/></div>{delivery.failure_code&&<p className="mt-1 break-words text-xs text-amber-700">{delivery.failure_code}</p>}<p className="mt-1 text-xs text-slate-400">{new Date(delivery.created_at).toLocaleString('en-TZ',{timeZone:'Africa/Dar_es_Salaam'})}</p></div>)}{filtered?.length===0&&<div className="py-8 text-center"><MessageSquare className="mx-auto mb-2 h-8 w-8 text-slate-300"/><p className="text-sm text-slate-500">{translate(deliveries?.length===0?'No delivery records.':'No delivery records match this filter.')}</p></div>}</div>
+  </div>
+ </section>;
+}

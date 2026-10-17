@@ -8,7 +8,9 @@ trait HasPublicId
 {
     protected static function bootHasPublicId(): void
     {
-        static::creating(fn ($model) => $model->public_id = (string) Str::ulid());
+        // Void closure: returning a value would halt Laravel's creating
+        // event chain and skip later security listeners on the model.
+        static::creating(function ($model): void { $model->public_id = (string) Str::ulid(); });
     }
 
     public function publicId(): string

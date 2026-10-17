@@ -56,7 +56,7 @@ it('keeps failed public authenticator requests as errors without manufacturing a
 function Lifetime() { useSessionLifetime(); return null; }
 const approval: ApprovalRequest = { phone: '0712345678', pin: '1234', permission: 'refund',
   operation_id: 'a05c7c91-5262-4b3c-9101-1c0c8dd4dd6f', payload_hash: 'a'.repeat(64) };
-it.each(['INVALID_PIN', 'INVALID_TOTP'])('retains the cashier session on supervisor %s without keeping mutation credentials', async (code) => {
+it.each(['INVALID_CREDENTIALS', 'INVALID_PIN', 'INVALID_TOTP'])('retains the cashier session on supervisor %s without keeping mutation credentials', async (code) => {
   const s = store(); signIn(s);
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ success: false, error: { code, message: 'Try again.' } }),
     { status: 401, headers: { 'Content-Type': 'application/json' } })));

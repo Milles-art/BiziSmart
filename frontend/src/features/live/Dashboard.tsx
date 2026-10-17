@@ -49,7 +49,7 @@ export function Dashboard({ shopName, actor, onNavigate }: { shopName: string; a
       </div></SectionCard>
     </div>
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <SectionCard title={translate("Recent Transactions")} action={reportAccess?action('View reports',()=>onNavigate('reports')):undefined}>
+      <SectionCard title={translate("Recent Transactions")} className="min-w-0 lg:col-span-2" action={reportAccess?action('View reports',()=>onNavigate('reports')):undefined}>
       {!reportAccess?<p className="py-6 text-center text-sm text-slate-400">{translate('Financial reports are available to the owner.')}</p>:recent.error?<QueryError error={recent.error} retry={()=>void recent.refetch()}/>:!recent.currentData?<p role="status" className="py-6 text-center text-sm text-slate-400">{translate('Loading report…')}</p>:recent.currentData.sales.length===0?<p className="py-6 text-center text-sm text-slate-400">{translate('No sales in this period.')}</p>:<div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Receipt','Cashier','Total'].map(label=><th key={label} className="px-3 py-2 text-left text-xs text-slate-400">{translate(label)}</th>)}</tr></thead><tbody>{recent.currentData.sales.map(sale=><tr key={sale.id} className="border-t border-slate-100"><td className="px-3 py-3 text-slate-600">{sale.receipt_number}</td><td className="px-3 py-3 text-slate-500">{sale.cashier}</td><td className="px-3 py-3 font-semibold text-emerald-600">{money(sale.total)}</td></tr>)}</tbody></table></div>}
     </SectionCard>
       <SectionCard title={translate("Till Status")} action={tillAccess ? action('Manage', () => onNavigate('tills')) : undefined}>

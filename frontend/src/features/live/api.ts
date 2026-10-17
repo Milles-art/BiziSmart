@@ -13,13 +13,13 @@ export type TillCloseCommit = TillCloseInput & { expected_cash: number; revision
 
 export type StaffRole = 'owner' | 'manager' | 'cashier' | 'stockkeeper';
 export interface ServerUser { id: string; name: string; role: StaffRole; branch_id: string | null; permissions: string[] }
-export interface ManagedUser extends ServerUser { phone: string; is_active: boolean; must_change_pin: boolean; two_factor_enabled: boolean }
+export interface ManagedUser extends ServerUser { phone: string; is_active: boolean; must_change_pin: boolean; two_factor_enabled: boolean; email?:string|null; email_login_enabled?:boolean }
 export interface Device { id: string; name: string; status: 'pending' | 'approved' | 'blocked'; user_id: string | null; approved_by: string | null; last_seen_at: string | null }
 export interface SessionResult { token: string; expires_at: string; user: ServerUser }
 export interface Challenge { challenge_token: string; next_step: 'enroll_totp' | 'verify_totp' | 'change_pin'; expires_at: string; setup_secret?: string }
 export type AuthResult = SessionResult | Challenge;
 export interface ApprovalGrant { approved_by: string; approval_token: string; expires_at: string }
-export interface ApprovalRequest { phone: string; pin: string; permission: 'refund' | 'void' | 'give_discount' | 'approve_variance' | 'adjust_stock' | 'manage_settings'; operation_id: string; payload_hash: string; code?: string }
+export interface ApprovalRequest { phone?: string; pin?: string; email?:string; password?:string; permission: 'refund' | 'void' | 'give_discount' | 'approve_variance' | 'adjust_stock' | 'manage_settings'; operation_id: string; payload_hash: string; code?: string }
 export interface CatalogueProduct { id: string; name: string; barcode: string | null; category: string | null; quantity_type: 'counted' | 'weight'; unit: string; selling_price: number; buying_price?: number; reorder_level: string; tracks_expiry: boolean; is_active: boolean; stock: string | null; stock_available: boolean; stock_total?: string; nearest_expiry?: string | null; department_id?: string | null; department_name?: string | null; packagings?: Packaging[]; selected_packaging?: Packaging | null; image?: import('./ProductImage').ProductImageMetadata | null }
 export interface ProductInput { department_id?: string | null; name: string; barcode: string | null; category: string | null; quantity_type: 'counted' | 'weight'; unit: string; buying_price: number; selling_price: number; reorder_level: string; tracks_expiry: boolean; is_active: boolean }
 export interface CatalogueFilters { page: number; search?: string; category?: string; barcode?: string; department_id?: string; low_stock?: number; expiring_in?: number }
@@ -49,7 +49,9 @@ export interface MobilePayment { operation_id?:string;discount_required?:boolean
 export type BeginMobilePayment = ({sale:CashSaleInput;collection?:never}|{collection:CollectionInput & {customer_id:string;review_hash:string};sale?:never}) & {buyer_name:string;buyer_email:string;phone:string};
 export interface SaleInput { loyalty_points?:number; discount?:number;discount_reason?:string; mobile_amount?:number; branch_id: string; till_id: string; customer_id?: string | null; credit_amount?: number; items: { product_id: string; qty: string; packaging_id?: string | null;discount?:number }[] }
 export interface SaleLine { automatic_discount?:number;loyalty_discount?:number; gross_total?:number;line_discount?:number;cart_discount?:number; product_id: string; name: string; quantity_type: 'counted' | 'weight'; unit: string; qty: string; base_qty: string; packaging_id: string | null; packaging_name: string | null; packaging_version: number | null; conversion_atoms: string; unit_price: number; discount: number; line_total: number }
-export interface SaleReview { manual_cart_discount?:number;loyalty_redemption?:{points:number;discount_amount:number}; discount_reason?:string; branch_id: string; till_id: string; lines: SaleLine[]; subtotal: number; discount: number; total: number; vat_rate: number; vat_amount: number; review_hash: string; mobile_amount?:number; customer_id?: string | null; customer_name?:string; credit_amount?:number; cash_allocated?:number }
+export interface SaleReview { manual_cart_discount?:number;loyalty_redemption?:{points:number;discount_amount:number}; discount_reason?:string; branch_id: string; till_id: string; lines: SaleLine[]; subtotal: number; discount: number; total: number; vat_rate: number; vat_amount: number; review_hash: string; mobile_amount?:number; customer_id?: string | null; customer_name?:string; credit_amount?:number; cash_allocated?:number; margin_warnings?: MarginWarning[] }
+/** Server-computed S22 warn-only margin entry. Cost fields are present only for actors with view_buying_price; React must render them verbatim and never derive costs. Absence of the array means no warnings and no cost disclosure. */
+export interface MarginWarning { code: 'MARGIN_BELOW_COST'; line_index: number; product_id: string; product_name: string; batch_id: string; batch_number: string; base_qty: string; net_total: number; cost_total?: number; shortfall?: number }
 export interface CashSaleInput extends SaleInput { approval_token?:string; payment_id?:string; cash_tendered: number; review_hash: string }
 export interface CashSale extends Omit<SaleReview, 'review_hash'> { id: string; receipt_number: string; status: string; cash_tendered: number; change_given: number; created_at: string; occurred_at?:string|null; is_offline?:boolean; replayed: boolean; receipt_url: string | null; payments?: {id:string;method:string;amount:number}[] }
 export interface ReturnReceipt { has_mobile_payment?:boolean; sale_id:string; receipt_number:string; branch_id:string; total:number; return_status:string; lines:(SaleLine & {line_index:number;returned_qty:string;remaining_qty:string})[] }
@@ -77,7 +79,7 @@ export const liveApi = createApi({ reducerPath: 'liveApi', tagTypes: ['MobilePay
     const response = await baseQuery(args, api, extra);
     const url = typeof args === 'string' ? args : args.url;
     const failure = response.error && 'data' in response.error ? response.error.data as { error?: { code?: string } } : undefined;
-    const wrongSupervisorCredentials = url === 'auth/supervisor-check' && ['INVALID_PIN', 'INVALID_TOTP'].includes(failure?.error?.code ?? '');
+    const wrongSupervisorCredentials = url === 'auth/supervisor-check' && ['INVALID_CREDENTIALS', 'INVALID_PIN', 'INVALID_TOTP'].includes(failure?.error?.code ?? '');
     if (response.error?.status === 401 && !wrongSupervisorCredentials && (api.getState() as { session: SessionState }).session.token) {
       api.dispatch(signedOut()); api.dispatch(liveApi.util.resetApiState());
     }

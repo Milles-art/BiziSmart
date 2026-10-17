@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { kiswahili } from "./kiswahili";
+import { emailAuthKiswahili } from "./emailAuthKiswahili";
 
 export type Language = "en" | "sw";
 const preferenceKey = "bizismart-language";
@@ -28,7 +29,7 @@ export function setLanguage(value: Language): void {
 }
 /** Explicit message keys; business names, catalogue data and API identifiers stay untouched. */
 export function translate(key: string, selected: Language = language): string {
-  return selected === "sw" ? (kiswahili[key] ?? key) : key;
+  return selected === "sw" ? (emailAuthKiswahili[key] ?? kiswahili[key] ?? key) : key;
 }
 function subscribe(listener: () => void) {
   listeners.add(listener);

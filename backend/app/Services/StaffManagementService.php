@@ -20,7 +20,8 @@ class StaffManagementService
             $business = $this->lockOwner($actor);
             $this->checkLimit($business);
             $this->uniquePhone($input['phone']);
-            $user = User::create(['name' => $input['name'], 'phone' => $input['phone'], 'pin_hash' => $input['pin'],
+            // Email-first staff have no usable numeric legacy PIN before activation.
+            $user = User::create(['name' => $input['name'], 'phone' => $input['phone'], 'pin_hash' => $input['pin'] ?? bin2hex(random_bytes(32)),
                 'branch_id' => $this->branch($input['branch_id'] ?? null), 'must_change_pin' => true, 'is_active' => true]);
             $this->roles->assign($user, $input['role']);
             activity('staff')->performedOn($user)->causedBy($actor)->event('staff_created')

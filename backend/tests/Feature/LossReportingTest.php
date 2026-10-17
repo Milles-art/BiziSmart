@@ -21,7 +21,20 @@ afterEach(function(){$this->context->clear();$this->travelBack();StockMovement::
 function lossUrl(string $path,string $shop='alpha'):string{return 'http://'.$shop.'.bizismart.test/api/v1/'.$path;}
 function lossInput($test,array $extra=[]):array{return [...['operation_id'=>(string)Str::uuid(),'batch_id'=>$test->alphaBatch->publicId(),'qty'=>'3','category'=>'damage','reason'=>'Broken bottles'],...$extra];}
 function lossGrant($test,array $review):string{return $test->postJson(lossUrl('auth/supervisor-check'),['phone'=>'0710000000','pin'=>'1234','code'=>app(\PragmaRX\Google2FA\Google2FA::class)->oathTotp('JBSWY3DPEHPK3PXP',intdiv(now()->timestamp,30)),'permission'=>'adjust_stock','operation_id'=>$review['snapshot']['operation_id'],'payload_hash'=>$review['payload_hash']])->assertOk()->json('data.approval_token');}
-function lossWorker(int $business,int $user,int $token,array $input):Closure{return static function()use($business,$user,$token,$input){if(!app()->environment('testing')||!str_ends_with(config('database.connections.mysql.database'),'_test'))throw new LogicException('Dedicated test database required.');app(TenantContext::class)->set(Business::findOrFail($business));$actor=User::findOrFail($user)->withAccessToken(PersonalAccessToken::findOrFail($token));try{$result=app(StockService::class)->commitLossCount($actor,$input,false);return ['id'=>$result['movement']->publicId(),'replayed'=>$result['replayed']];}catch(\App\Exceptions\ApiException $e){return ['error'=>$e->errorCode];}};}
+function lossWorker(int $business,int $user,int $token,array $input):Closure{
+    // Process workers must share the parent fixture's frozen event/auth clock.
+    $instant=now()->toISOString();
+    return static function()use($business,$user,$token,$input,$instant){
+        if(!app()->environment('testing')||!str_ends_with(config('database.connections.mysql.database'),'_test'))throw new LogicException('Dedicated test database required.');
+        \Illuminate\Support\Carbon::setTestNow($instant);\Carbon\CarbonImmutable::setTestNow($instant);
+        try{
+            app(TenantContext::class)->set(Business::findOrFail($business));
+            $actor=User::findOrFail($user)->withAccessToken(PersonalAccessToken::findOrFail($token));
+            try{$result=app(StockService::class)->commitLossCount($actor,$input,false);return ['id'=>$result['movement']->publicId(),'replayed'=>$result['replayed']];}
+            catch(\App\Exceptions\ApiException $e){return ['error'=>$e->errorCode];}
+        }finally{app(TenantContext::class)->clear();\Illuminate\Support\Carbon::setTestNow();\Carbon\CarbonImmutable::setTestNow();}
+    };
+}
 it('records classified loss at exact batch cost once with immutable department snapshots',function(){
     $input=lossInput($this);$review=$this->postJson(lossUrl('stock/losses/preview'),$input)->assertOk()->assertJsonPath('data.loss_value',2400)->assertJsonPath('data.qty_after','17')->json('data');
     $body=[...$input,'expected_qty'=>$review['snapshot']['qty_before']];$id=$this->postJson(lossUrl('stock/losses'),$body)->assertCreated()->assertJsonPath('data.loss.loss_value',2400)->assertJsonPath('data.movement.type','stock_loss')->assertJsonPath('data.movement.approved_by',$this->alphaOwner->publicId())->json('data.movement.id');

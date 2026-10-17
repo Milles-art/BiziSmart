@@ -56,8 +56,8 @@ it('commits the approved original line discount and cart discount once without d
     return response({...review,id:'sale_one',receipt_number:'RCP-2026-000001',status:'completed',cash_tendered:7500,change_given:0,created_at:'2026-10-12T10:00:00Z',payments:[{id:'sp_one',method:'cash',amount:7500}]},201);
   }));
   const dialog=await discountedReview();
-  fireEvent.change(dialog.getByLabelText('Supervisor phone'),{target:{value:'0710000002'}});
-  fireEvent.change(dialog.getByLabelText('Supervisor PIN'),{target:{value:'1234'}});
+  fireEvent.change(dialog.getByLabelText('Supervisor email'),{target:{value:'supervisor@example.test'}});
+  fireEvent.change(dialog.getByLabelText('Supervisor password'),{target:{value:'supervisor-password-42'}});
   fireEvent.click(dialog.getByRole('button',{name:'Approve discount'}));
   await dialog.findByText('Discount approved for this checkout.');
   fireEvent.click(dialog.getByRole('button',{name:'Confirm cash payment'}));

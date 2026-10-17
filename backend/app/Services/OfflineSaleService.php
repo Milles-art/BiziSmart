@@ -199,7 +199,7 @@ final class OfflineSaleService
         $original->assertCurrentBusiness();$actor=User::whereKey($original->id)->lockForUpdate()->first();$token=$original->currentAccessToken();
         $session=$token?PersonalAccessToken::whereKey($token->id)->where('tokenable_id',$original->id)->lockForUpdate()->first():null;
         $device=$session?Device::whereKey($session->device_id)->lockForUpdate()->first():null;
-        if(!$actor||!$actor->is_active||$actor->must_change_pin||$actor->getRoleNames()->count()!==1||($actor->hasRole('owner')&&!$actor->totp_confirmed_at)||!$session||$session->expires_at?->isPast()||$device?->status!=='approved')throw new AuthenticationException;
+        if(!$actor||!$actor->is_active||$actor->must_change_pin||$actor->getRoleNames()->count()!==1||($actor->hasRole('owner')&&!$actor->ownerAuthenticationReady())||!$session||$session->expires_at?->isPast()||$device?->status!=='approved')throw new AuthenticationException;
         if(!$actor->can('sell')||($owner&&!$actor->hasRole('owner')))throw new AuthorizationException;
         return [$actor->withAccessToken($session),$device];
     }

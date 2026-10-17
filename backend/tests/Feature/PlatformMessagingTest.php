@@ -24,8 +24,8 @@ it('onboards once with roles branch managed term and the existing expiring one-u
     $input=['name'=>'New shop','subdomain'=>'new-shop','owner_phone'=>'0712345678','plan_code'=>$this->plan->code,'starts_on'=>now('Africa/Dar_es_Salaam')->toDateString(),'ends_on'=>now('Africa/Dar_es_Salaam')->addMonth()->toDateString()];$key=(string)Str::uuid();$service=app(PlatformService::class);$first=$service->execute($this->admin,'onboard',$input,$key);$again=$service->execute($this->admin,'onboard',$input,$key);expect($again['replayed'])->toBeTrue()->and($again['setup_url'])->toBe($first['setup_url']);expect(Business::where('subdomain','new-shop')->count())->toBe(1);$shop=Business::where('subdomain','new-shop')->first();$this->context->run($shop,function(){expect(Branch::count())->toBe(1)->and(Subscription::count())->toBe(1)->and(\App\Models\OwnerInvitation::whereNull('consumed_at')->count())->toBe(1)->and(User::count())->toBe(0);});expect($first['setup_url'])->toContain('#setup=');
     expect(fn()=>$service->execute($this->admin,'onboard',[...$input,'name'=>'Changed'],$key))->toThrow(\Illuminate\Validation\ValidationException::class);
 });
-it('denies platform writes without mandatory admin TOTP and rejects unresolved plan assignments',function(){
-    $this->admin->app_authentication_secret=null;$this->admin->save();expect(fn()=>app(PlatformService::class)->execute($this->admin,'plan',[],(string)Str::uuid()))->toThrow(\Illuminate\Auth\Access\AuthorizationException::class);
+it('denies platform writes for inactive administrators and guests',function(){
+    $this->admin->is_active=false;$this->admin->save();expect(fn()=>app(PlatformService::class)->execute($this->admin,'plan',[],(string)Str::uuid()))->toThrow(\Illuminate\Auth\Access\AuthorizationException::class);
     $this->get('http://admin.bizismart.co.tz/platform-management')->assertRedirect('http://admin.bizismart.co.tz/login');
 });
 it('consumes each admin TOTP timestep only once under a database lock',function(){
@@ -40,6 +40,17 @@ it('enforces explicit plan overrides in Pennant endpoints and reports them in me
     $this->alpha->settings=['feature_overrides'=>['reports'=>false,'scales'=>false]];$this->alpha->save();$this->getJson(platformMessageUrl('reports/summary?from=2026-10-14&to=2026-10-14'))->assertForbidden()->assertJsonPath('error.code','FEATURE_DISABLED');$this->getJson(platformMessageUrl('scales/profile'))->assertForbidden()->assertJsonPath('error.code','FEATURE_DISABLED');$this->getJson(platformMessageUrl('me'))->assertOk()->assertJsonPath('data.features.reports',false);
     $this->alpha->settings=['feature_overrides'=>['reports'=>true,'scales'=>true]];$this->alpha->save();$this->getJson(platformMessageUrl('scales/profile'))->assertOk();
 });
+it('validates completed subscription payment dates against Tanzania today across UTC midnight',function(){
+    $this->travelTo(\Carbon\CarbonImmutable::parse('2026-10-15 22:30:00','UTC'));
+    $input=['business_id'=>$this->alpha->publicId(),'plan_code'=>$this->plan->code,'expected_revision'=>0,'starts_on'=>'2026-10-16','ends_on'=>'2027-10-16','status'=>'active','payment'=>['amount'=>70000,'method'=>'bank','reference'=>'TZ-MIDNIGHT','paid_on'=>'2026-10-16']];
+    $service=app(PlatformService::class);
+    $service->execute($this->admin,'subscription',$input,(string)Str::uuid());
+    $input['expected_revision']=1;$input['payment']['paid_on']='2026-10-17';
+    expect(fn()=>$service->execute($this->admin,'subscription',$input,(string)Str::uuid()))->toThrow(\Illuminate\Validation\ValidationException::class);
+    $this->context->run($this->alpha,fn()=>expect(\App\Models\SubscriptionPayment::count())->toBe(1));
+    $this->travelBack();
+});
+
 it('records subscription payments atomically once and rejects stale revisions',function(){
     $input=['business_id'=>$this->alpha->publicId(),'plan_code'=>$this->plan->code,'expected_revision'=>0,'starts_on'=>now('Africa/Dar_es_Salaam')->toDateString(),'ends_on'=>now('Africa/Dar_es_Salaam')->addMonth()->toDateString(),'status'=>'active','payment'=>['amount'=>70000,'method'=>'bank','reference'=>'BANK-TERM-1','paid_on'=>now('Africa/Dar_es_Salaam')->toDateString()]];$key=(string)Str::uuid();$service=app(PlatformService::class);$service->execute($this->admin,'subscription',$input,$key);expect($service->execute($this->admin,'subscription',$input,$key)['replayed'])->toBeTrue();expect(fn()=>$service->execute($this->admin,'subscription',$input,(string)Str::uuid()))->toThrow(\Illuminate\Validation\ValidationException::class);$this->context->run($this->alpha,fn()=>expect(\App\Models\SubscriptionPayment::count())->toBe(1));
 });

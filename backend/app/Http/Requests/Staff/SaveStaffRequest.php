@@ -21,7 +21,7 @@ class SaveStaffRequest extends FormRequest
                 try { StaffPhone::normalize($value); } catch (InvalidArgumentException) { $fail('Enter a Tanzania phone number.'); }
             }],
             'role' => [$required, Rule::in(array_keys(StaffRoleService::ROLES))],
-            'pin' => [$this->isMethod('post') ? 'required' : 'prohibited', 'string', 'regex:/^[0-9]{4,6}$/D'],
+            'pin' => [$this->isMethod('post') ? 'sometimes' : 'prohibited', 'string', 'regex:/^[0-9]{4,6}$/D'],
             'branch_id' => ['sometimes', 'nullable', 'string', 'regex:/^br_[0-9A-HJKMNP-TV-Z]{26}$/D'],
             'is_active' => [$this->isMethod('post') ? 'prohibited' : 'sometimes', 'boolean'],
         ];

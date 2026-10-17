@@ -25,7 +25,7 @@ class StaffAuthService
         return $this->commitResult(function () use ($input, $ip, $dummyHash) {
             $user = User::forPhone($input['phone'])->lockForUpdate()->first();
             $valid = Hash::check($input['pin'], $user?->pin_hash ?? $dummyHash);
-            if (! $user || ! $user->is_active) { return $this->invalidPin(); }
+            if (! $user || ! $user->is_active || $user->usesEmailPassword()) { return $this->invalidPin(); }
             if ($user->locked_until?->isFuture()) { return $this->locked(); }
             if ($user->locked_until !== null) {
                 $user->failed_pin_attempts = 0;
@@ -111,6 +111,9 @@ class StaffAuthService
         if (! $actor->is_active || ! $actor->hasRole('owner')) { throw new \Illuminate\Auth\Access\AuthorizationException; }
         DB::transaction(function () use ($actor, $target, $newPin) {
             $target->refreshForUpdate();
+            if ($target->usesEmailPassword()) {
+                throw new ApiException('EMAIL_PASSWORD_REQUIRED', 'Use email password reset for this account.', 409);
+            }
             $target->pin_hash = $newPin;
             $target->must_change_pin = true;
             $target->failed_pin_attempts = 0;
@@ -137,6 +140,33 @@ class StaffAuthService
             $device = Device::whereKey($current->device_id)->lockForUpdate()->first();
             if (! $device || $device->status !== 'approved') { return $this->deviceDenied(); }
             $current->delete();
+            return $this->issue($user, $device);
+        });
+    }
+
+    public function issueEmailSession(User $user, string $deviceUid, string $deviceName, ?string $ip): array
+    {
+        $user->assertCurrentBusiness();
+        return $this->commitResult(function () use ($user, $deviceUid, $deviceName, $ip) {
+            $user->refreshForUpdate();
+            if (! $user->is_active || ! $user->usesEmailPassword() || $user->must_change_pin
+                || $user->locked_until?->isFuture() || $user->getRoleNames()->count() !== 1) {
+                return $this->invalidChallenge();
+            }
+            Business::whereKey($this->context->requireId())->lockForUpdate()->firstOrFail();
+            $device = Device::where('device_uid', $deviceUid)->lockForUpdate()->first();
+            if (! $device) {
+                $device = Device::create(['device_uid' => $deviceUid, 'name' => $deviceName, 'user_id' => $user->id]);
+            }
+            if (! $this->deviceEligible($user, $device)) { return $this->deviceDenied(); }
+            if ($device->status !== 'approved') {
+                $device->status = 'approved';
+                $device->approved_by = $user->id;
+            }
+            $device->last_ip = $ip;
+            $device->last_seen_at = now();
+            $device->save();
+            AuthChallenge::where('user_id', $user->id)->delete();
             return $this->issue($user, $device);
         });
     }

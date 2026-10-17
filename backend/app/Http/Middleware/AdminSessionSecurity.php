@@ -12,6 +12,6 @@ class AdminSessionSecurity {
             if(!$guard->user()->is_active||$guard->viaRemember()||($last&&now()->timestamp-(int)$last>=1800)){$guard->logout();$request->session()->invalidate();$request->session()->regenerateToken();return redirect()->route('filament.admin.auth.login')->header('Cache-Control','no-store, private');}
             $request->session()->put('admin_last_activity',now()->timestamp);
         }
-        $response=$next($request);$response->headers->set('Cache-Control','no-store, private');return $response;
+        $response=$next($request);$response->headers->set('Cache-Control','no-store, private');$response->headers->set('Referrer-Policy','no-referrer');return $response;
     }
 }

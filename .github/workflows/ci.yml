@@ -12,6 +12,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  backup-helpers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh infrastructure/prod/test-helpers.sh
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - name: Verify encrypted backup authentication and recovery
+        shell: bash
+        run: |
+          private_dir=$(mktemp -d)
+          trap 'rmdir "$private_dir"' EXIT
+          BIZISMART_CRYPTO_TEST_DIR="$private_dir" php infrastructure/prod/test-backup-crypto.php
+          BIZISMART_CRYPTO_TEST_DIR="$private_dir" php infrastructure/prod/test-normalize-recovery.php
+
   backend:
     runs-on: ubuntu-latest
     strategy:
@@ -46,9 +63,47 @@ jobs:
           coverage: none
       - run: composer install --no-interaction --prefer-dist
         working-directory: backend
+      - run: composer audit --locked
+        working-directory: backend
       - run: cp .env.example .env && php artisan key:generate && php artisan filament:assets && php artisan view:cache
         working-directory: backend
       - run: php -r 'new PDO("mysql:host=127.0.0.1;dbname=".getenv("DB_DATABASE"), getenv("DB_USERNAME"), getenv("DB_PASSWORD"));'
+      - run: php artisan test
+        working-directory: backend
+
+  mariadb:
+    runs-on: ubuntu-latest
+    services:
+      database:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: bizismart_test
+          MARIADB_USER: bizismart
+          MARIADB_PASSWORD: testing
+          MARIADB_ROOT_PASSWORD: testing
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mariadb-admin ping -h localhost -ptesting"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: bizismart_test
+      DB_USERNAME: bizismart
+      DB_PASSWORD: testing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, bcmath, dom, pdo_mysql, zip, intl
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist
+        working-directory: backend
+      - run: cp .env.example .env && php artisan key:generate && php artisan filament:assets && php artisan view:cache
+        working-directory: backend
       - run: php artisan test
         working-directory: backend
 
@@ -61,6 +116,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm audit --omit=dev
       - run: npm test
       - run: npm run typecheck
       - run: npm run lint
@@ -68,6 +124,9 @@ jobs:
 
   browser:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        shared: ['0', '1']
     services:
       mysql:
         image: mysql:8.4
@@ -82,6 +141,7 @@ jobs:
           --health-interval=10s --health-timeout=5s --health-retries=10
     env:
       APP_ENV: testing
+      BIZISMART_E2E_SHARED: ${{ matrix.shared }}
       DB_CONNECTION: mysql
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
@@ -109,6 +169,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-failures
+          name: browser-failures-${{ matrix.shared }}
           path: test-results/
           retention-days: 7

@@ -3,12 +3,15 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToBusiness;
+use App\Models\Concerns\HasPublicId;
 use Laravel\Sanctum\PersonalAccessToken as SanctumToken;
 use LogicException;
 
 class PersonalAccessToken extends SanctumToken
 {
-    use BelongsToBusiness;
+    use BelongsToBusiness, HasPublicId;
+
+    public const PUBLIC_ID_PREFIX = 'tok_';
 
     protected $hidden = ['id', 'business_id', 'token', 'tokenable_id', 'device_id'];
 

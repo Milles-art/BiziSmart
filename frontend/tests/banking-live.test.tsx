@@ -16,6 +16,25 @@ beforeEach(()=>{const c=transferableAbortController();vi.stubGlobal('AbortContro
 afterEach(()=>{cleanup();store.dispatch(liveApi.util.resetApiState());vi.unstubAllGlobals();});
 function mount(){return render(<Provider store={store}><Banking/></Provider>);}
 function installFetch(post:(request:Request)=>Promise<Response>){vi.stubGlobal('fetch',vi.fn(async(request:Request)=>{if(request.method==='POST')return post(request);if(request.url.endsWith('supplier-price-comparisons'))return response({products:[]});return response(request.url.endsWith('/suppliers')?suppliers:overview);}));}
+it('recovers a failed overview and loads comparison costs only when that task is opened',async()=>{
+ let attempts=0;const reads:string[]=[];
+ vi.stubGlobal('fetch',vi.fn(async(request:Request)=>{
+  reads.push(request.url);
+  if(request.url.endsWith('/banking'))return ++attempts===1?response({},503):response(overview);
+  return response(request.url.endsWith('/suppliers')?suppliers:{products:[]});
+ }));
+ mount();await screen.findByRole('alert');expect(reads.some(url=>url.endsWith('/suppliers'))).toBe(false);
+ fireEvent.click(screen.getByRole('button',{name:'Try again'}));await screen.findByRole('option',{name:'INV-1 · TSh 5,000'});
+ expect(attempts).toBe(2);expect(reads.some(url=>url.endsWith('supplier-price-comparisons'))).toBe(false);
+ fireEvent.click(screen.getByRole('button',{name:'Price comparison'}));await screen.findByText('Receive a supplier invoice to start comparing actual costs.');
+ expect(reads.some(url=>url.endsWith('supplier-price-comparisons'))).toBe(true);
+});
+it('does not crash or claim zero statement records when the overview payload is incomplete',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(request:Request)=>response(request.url.endsWith('supplier-price-comparisons')?{products:[]}:suppliers)));
+ mount();await screen.findByText('Banking records are unavailable. Reload before relying on these counts.');
+ expect(screen.getByText('Statement lines').parentElement?.textContent).toContain('—');
+ expect(screen.queryByText('Recorded. No transfer was executed.')).toBeNull();
+});
 it.each([504,408])('plans selected invoices and recovers HTTP %s uncertainty across navigation using the same UUID',async status=>{
  const attempts:unknown[]=[];installFetch(async request=>{attempts.push(await request.json());return attempts.length===1?response({},status):response({replayed:true,external_transfer_executed:false});});
  const view=mount();await screen.findByRole('option',{name:'INV-1 · TSh 5,000'});fireEvent.change(screen.getByLabelText('Unpaid invoice'),{target:{value:'sinv_one'}});fireEvent.change(screen.getByLabelText('Due date'),{target:{value:'2026-10-20'}});fireEvent.change(screen.getByLabelText('Planned amount (TSh)'),{target:{value:'2000'}});fireEvent.click(screen.getByRole('button',{name:'Save payment plan'}));await screen.findByRole('button',{name:'Retry same operation'});view.unmount();mount();fireEvent.click(screen.getByRole('button',{name:'Retry same operation'}));await screen.findByRole('status');expect(attempts).toHaveLength(2);expect(attempts[0]).toEqual(attempts[1]);expect(attempts[0]).toMatchObject({amount:2000});expect(store.getState().supplierOperations.bankPending).toBeNull();

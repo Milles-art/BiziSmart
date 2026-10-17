@@ -107,7 +107,7 @@ class StockService
             $current = $token ? \App\Models\PersonalAccessToken::whereKey($token->id)->where('tokenable_id', $requester->id)->lockForUpdate()->first() : null;
             $device = $current?->device_id ? Device::whereKey($current->device_id)->lockForUpdate()->first() : null;
             if (! $actor || ! $actor->is_active || $actor->must_change_pin || $actor->getRoleNames()->count() !== 1
-                || ($actor->hasRole('owner') && ! $actor->totp_confirmed_at) || ! $current || $current->expires_at?->isPast() || $device?->status !== 'approved') { throw new AuthenticationException; }
+                || ($actor->hasRole('owner') && ! $actor->ownerAuthenticationReady()) || ! $current || $current->expires_at?->isPast() || $device?->status !== 'approved') { throw new AuthenticationException; }
             if (! $actor->can('adjust_stock')) { throw new AuthorizationException; }
             $actor->withAccessToken($current);
             Business::whereKey($this->context->requireId())->lockForUpdate()->firstOrFail();

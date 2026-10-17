@@ -19,7 +19,7 @@ class ResolveTenant
         $this->context->clear();
         Auth::forgetGuards();
         try {
-            if ($request->routeIs('health','payments.selcom.callback','messaging.whatsapp.webhook')) {
+            if ($request->routeIs('health','ready','payments.selcom.callback','messaging.whatsapp.webhook')) {
                 return $next($request);
             }
             $host = strtolower($request->getHost());

@@ -1,3 +1,52 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Match the archive's compact emerald/slate surfaces while retaining accessible controls. */
+button:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+
+/* Shared shop tables follow the supplied ZIP; keep horizontal scrolling in
+   each screen's existing table wrapper rather than overflowing the workspace. */
+.workspace-content { scrollbar-gutter: stable; }
+.workspace-content table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.workspace-content table thead { background: #f8fafc; }
+.workspace-content table th { padding: .875rem 1rem; color: #64748b; font-size: .75rem; font-weight: 600; }
+.workspace-content table td { padding: .875rem 1rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.workspace-content table tbody tr:last-child td { border-bottom: 0; }
+.workspace-content table tbody tr:not([aria-selected="true"]):hover { background: #f8fafc; }
+.workspace-content table .text-right { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.workspace-content select, .workspace-content input[type="date"], .workspace-content input[type="datetime-local"] { min-height: 2.625rem; max-width: 100%; }
+.workspace-content :is(input,select,textarea):focus-visible { outline: 2px solid #10b981; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .biz-workspace *, .biz-workspace *::before, .biz-workspace *::after { transition-duration: 0s !important; } }
+
+/* Card proportions follow the approved Products mockup. Column count depends on
+   the available workspace, so the sidebar never squeezes a card below 240px. */
+.catalogue-grid-container { container-type: inline-size; }
+.catalogue-product-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+.catalogue-product-card { display: grid; grid-template-rows: minmax(0, 1fr) auto; aspect-ratio: 1; min-width: 0; }
+.catalogue-product-photo > span > svg { width: 2.75rem; height: 2.75rem; }
+@container (min-width: 496px) { .catalogue-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (min-width: 752px) { .catalogue-product-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (min-width: 1008px) { .catalogue-product-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* Shared retail work surfaces keep controls and real records ahead of decoration. */
+.screen-tabs, .workflow-tabs { scrollbar-width: thin; scrollbar-color: #94a3b8 transparent; }
+.workflow-tabs { display: flex; width: fit-content; max-width: 100%; gap: .25rem; padding: .25rem; overflow-x: auto; border-radius: .5rem; background: #e2e8f0; }
+.workflow-tabs > button { flex-shrink: 0; white-space: nowrap; }
+.workflow-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: .75rem; }
+.workflow-heading h1, .workflow-heading h2 { font-size: 1.25rem; line-height: 1.5; font-weight: 700; color: #0f172a; }
+.workflow-heading p { max-width: 65ch; margin-top: .25rem; font-size: .875rem; line-height: 1.5; color: #64748b; }
+.workflow-record { min-width: 0; border: 1px solid #e2e8f0; border-radius: .75rem; background: white; padding: 1rem; }
+.workflow-help { border-radius: .5rem; border: 1px solid #e2e8f0; background: #f8fafc; padding: .75rem 1rem; color: #475569; font-size: .8125rem; line-height: 1.5; }
+.workspace-content button:not(:disabled), .workspace-content summary { -webkit-tap-highlight-color: transparent; }
+.workspace-content :is(input, textarea, select) { color: #334155; }
+.workspace-content input::placeholder, .workspace-content textarea::placeholder { color: #64748b; opacity: 1; }
+.workspace-content :is(input, textarea, select):disabled { background-color: #f8fafc; }
+@media (max-width: 639px) {
+  .summary-stat-card > div:first-child svg { width: 1rem; height: 1rem; }
+  .workspace-content table th, .workspace-content table td { padding: .75rem; }
+  .workflow-record { padding: .875rem; }
+}

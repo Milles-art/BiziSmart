@@ -21,7 +21,13 @@
     "lint": "npm run lint --workspace frontend",
     "typecheck": "npm run typecheck --workspace frontend"
   },
+  "overrides": {
+    "tailwindcss@3.4.19": {
+      "postcss-selector-parser": "7.1.6"
+    }
+  },
   "devDependencies": {
-    "@playwright/test": "^1.64.0"
+    "@playwright/test": "^1.64.0",
+    "jsdom": "26.1.0"
   }
 }

@@ -6,6 +6,9 @@ BarChart3,
 Boxes,
 Calculator,
 LayoutDashboard,
+Landmark,
+MessageSquare,
+CloudOff,
 Package,
 Settings as SettingsIcon,
 ShoppingCart,
@@ -26,6 +29,9 @@ const allNavItems: { id: Screen; label: string; icon: typeof LayoutDashboard }[]
   { id: 'customers', label: 'Customers', icon: Users },
   { id: 'staff', label: 'Staff', icon: UserCog },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
+  { id: 'banking', label: 'Banking', icon: Landmark },
+  { id: 'messaging', label: 'Messaging', icon: MessageSquare },
+  { id: 'offline', label: 'Offline Sync', icon: CloudOff },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
@@ -69,6 +75,7 @@ export function Sidebar({ screen, onNavigate, open, onClose, store }: Props) {
             return (
               <button
                 key={item.id}
+                aria-current={active ? 'page' : undefined}
                 onClick={() => onNavigate(item.id)}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${active ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
               >
@@ -83,10 +90,10 @@ export function Sidebar({ screen, onNavigate, open, onClose, store }: Props) {
             <div className={`flex h-9 w-9 items-center justify-center rounded-full ${roleColors[user.role]} text-sm font-semibold text-white`}>
               {user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
             </div>
-            <div className="min-w-0 flex-1">
+            <button type="button" aria-label={translate('My account')} onClick={()=>onNavigate('account')} className="min-w-0 flex-1 text-left">
               <p className="truncate text-sm font-medium text-white">{user.name}</p>
               <p className="truncate text-xs text-slate-500">{translate(user.role)}</p>
-            </div>
+            </button>
             <button onClick={store.logout} className="rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white">
               {translate("Logout")}
             </button>

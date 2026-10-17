@@ -9,6 +9,8 @@ const screenTitles: Record<Screen, string> = {
   inventory: 'Inventory Management', suppliers: 'Suppliers & Purchasing',
   tills: 'Tills & Loss Prevention', customers: 'Customers', staff: 'Staff & Roles',
   reports: 'Reports', settings: 'Settings & Admin',
+  banking: 'Banking & Reconciliation', messaging: 'Messaging', offline: 'Offline Sync',
+  account: 'My account',
 };
 
 interface Props {
@@ -49,9 +51,9 @@ export function TopBar({ screen, onMenuClick, store }: Props) {
           {pendingCount > 0 && <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">{pendingCount}</span>}
         </button>
         <div className="flex items-center gap-2">
-          <div className={`flex h-9 w-9 items-center justify-center rounded-full ${roleColors[user.role]} text-sm font-semibold text-white`}>
+          <button type="button" aria-label={translate('My account')} title={translate('My account')} onClick={()=>store.setScreen('account')} className={`flex h-9 w-9 items-center justify-center rounded-full ${roleColors[user.role]} text-sm font-semibold text-white`}>
             {user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-          </div>
+          </button>
           <button aria-label={translate("Sign out")} onClick={store.logout} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-500">
             <LogOut className="h-4 w-4" />
           </button>

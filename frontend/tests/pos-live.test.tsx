@@ -22,9 +22,48 @@ function queries(r:Request,open=true) {
   if(r.url.endsWith('/payments/mine'))return response({data:{payments:[]}});
   if(r.url.endsWith('/payments/capabilities'))return response({data:{provider:'selcom',configured:false,enabled:false,reason:'merchant_setup_required'}}); return new URL(r.url).pathname.endsWith('/current') ? response({data:{till:open?{id:'till_one',branch_id:'br_main',branch_name:'Main'}:null,branch:{id:'br_main',name:'Main'},can_open:true,variance_limit:5000}}) : response({data:{products:[product]},meta:{page:1,per_page:50,total:1}}); }
 function mount() { return render(<Provider store={store}><POS actor={actor} shopName="Test Shop" onNavigate={vi.fn()}/></Provider>); }
+
+it('phone cart preserves edited quantities when closed and reopened without submitting a payment', async () => {
+  vi.stubGlobal('matchMedia', vi.fn(query => ({ matches: query.includes('1023'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  const fetch = vi.fn(async (r: Request) => queries(r));
+  vi.stubGlobal('fetch', fetch);
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: /Water.*TSh/ }));
+  const entry = screen.getByRole('button', { name: /Current sale.*View cart/ });
+  fireEvent.click(entry);
+  const cart = within(await screen.findByRole('dialog', { name: 'Current sale' }));
+  fireEvent.change(cart.getByLabelText('Quantity · line 1'), { target: { value: '2' } });
+  fireEvent.click(cart.getByRole('button', { name: 'Close cart' }));
+  expect(store.getState().checkout.entries[0].qty).toBe('2');
+  fireEvent.click(entry);
+  expect(within(screen.getByRole('dialog', { name: 'Current sale' })).getByLabelText('Quantity · line 1')).toHaveProperty('value', '2');
+  expect(fetch.mock.calls.some(([request]) => request.method === 'POST')).toBe(false);
+});
+
+it('restores category tabs while requesting server filtered products rather than hiding a local catalogue', async () => {
+  const requested: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (r: Request) => {
+    if (new URL(r.url).pathname.endsWith('/products')) requested.push(new URL(r.url).searchParams.get('category') ?? 'all');
+    return queries(r);
+  }));
+  mount();
+  const category = await screen.findByRole('button', {name:'Drinks', exact:true});
+  fireEvent.click(category);
+  await waitFor(() => expect(requested).toContain('Drinks'));
+  expect(category.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', {name:/Water.*TSh/})).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', {name:'All', exact:true}));
+  await waitFor(() => expect(category.getAttribute('aria-pressed')).toBe('false'));
+});
 async function cartReview() { fireEvent.click(await screen.findByRole('button',{name:/Water.*TSh/})); fireEvent.click(screen.getByRole('button',{name:'Review cash sale'})); const dialog=within(await screen.findByRole('dialog',{name:'Payment'})); fireEvent.change(dialog.getByLabelText('Cash tendered (TSh)'),{target:{value:'10000'}}); return dialog; }
 beforeEach(()=>{ const c=transferableAbortController(); vi.stubGlobal('AbortController',c.constructor); vi.stubGlobal('AbortSignal',c.signal.constructor); store=makeStore(); store.dispatch(signedIn({token:'test-only-token',expires_at:new Date(Date.now()+600000).toISOString(),user:actor})); });
 afterEach(()=>{ cleanup(); store.dispatch(liveApi.util.resetApiState()); vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear(); });
+it('renders server margin values in owner review and fresh receipt without sending cost authority back',async()=>{
+ const owner:ServerUser={...actor,role:'owner',permissions:[...actor.permissions,'view_buying_price']};store.dispatch(signedIn({token:'test-only-token',expires_at:new Date(Date.now()+600000).toISOString(),user:owner}));
+ const warnings=[{code:'MARGIN_BELOW_COST',line_index:0,product_id:product.id,product_name:product.name,batch_id:'batch_cost',batch_number:'ACTUAL-COST',base_qty:'1',net_total:8500,cost_total:13000,shortfall:4500}];let posted:Record<string,unknown>|undefined;
+ vi.stubGlobal('fetch',vi.fn(async(r:Request)=>{if(r.method==='POST'){if(r.url.endsWith('/preview'))return response({data:{...review,margin_warnings:warnings}});posted=await r.json();return response({data:{...sale,margin_warnings:warnings}},201);}if(new URL(r.url).pathname.endsWith('/products'))return response({data:{products:[{...product,buying_price:99}]},meta:{page:1,per_page:50,total:1}});return queries(r);}));
+ render(<Provider store={store}><POS actor={owner} shopName="Owner shop" onNavigate={vi.fn()}/></Provider>);const d=await cartReview();expect(d.getByRole('note',{name:'Below-cost lines'}).textContent).toContain('Cost: TSh 13,000');expect(d.getByRole('note',{name:'Below-cost lines'}).textContent).toContain('Short by: TSh 4,500');expect(d.getByRole('button',{name:'Confirm cash payment'})).toHaveProperty('disabled',false);fireEvent.click(d.getByRole('button',{name:'Confirm cash payment'}));const receipt=within(await screen.findByRole('dialog',{name:'Sale completed'}));expect(receipt.getByRole('note',{name:'Below-cost lines'}).textContent).toContain('Cost: TSh 13,000');expect(posted?.review_hash).toBe(review.review_hash);expect(posted).not.toHaveProperty('margin_warnings');expect(JSON.stringify(posted)).not.toContain('cost_total');
+});
 
 it('uses the server review and saved receipt then clears the cart and refreshes stock and till',async()=>{
   let body:Record<string,unknown>|null=null; let key:string|null=null;

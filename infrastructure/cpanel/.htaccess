@@ -1,0 +1,20 @@
+Options -Indexes -MultiViews
+RewriteEngine On
+
+# Laravel receives tenant Host and bearer headers on the same origin.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteRule ^api(?:/|$) gateway.php [L]
+
+# No uploaded/executable PHP except our explicit API gateway.
+RewriteRule ^(?!gateway\.php$).*\.php(?:/|$) - [F,L,NC]
+RewriteRule (^|/)\. - [F,L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . index.html [L]
+
+<IfModule mod_headers.c>
+    <FilesMatch "^(index\.html|sw\.js|registerSW\.js|manifest\.webmanifest)$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+</IfModule>

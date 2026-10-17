@@ -322,6 +322,10 @@ export type Screen =
   | "customers"
   | "staff"
   | "reports"
+  | "banking"
+  | "messaging"
+  | "offline"
+  | "account"
   | "settings";
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {

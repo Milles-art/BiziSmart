@@ -21,14 +21,14 @@ function mount(actor=owner){return render(<Provider store={store}><Suppliers act
 it('recovers an uncertain supplier write with the same frozen body and UUID through navigation',async()=>{
  const attempts:unknown[]=[];
  vi.stubGlobal('fetch',vi.fn(async(request:Request)=>{if(request.method==='GET')return response(request.url.endsWith('/current')?{till:null}:overview);if(request.url.endsWith('/preview'))return response({review_hash:'a'.repeat(64)});attempts.push({key:request.headers.get('Idempotency-Key'),body:await request.json()});return attempts.length===1?response({},504):response({supplier,replayed:true});}));
- const view=mount();await screen.findByText('Rice supplier · Active');fireEvent.click(screen.getByRole('button',{name:'Add supplier'}));fireEvent.change(screen.getByLabelText('Supplier name'),{target:{value:'New vendor'}});fireEvent.click(screen.getByRole('button',{name:'Review supplier operation'}));fireEvent.click(await screen.findByRole('button',{name:'Confirm supplier operation'}));await screen.findByRole('button',{name:'Retry same supplier operation'});
+ const view=mount();await screen.findByRole('heading',{name:'Rice supplier'});fireEvent.click(screen.getByRole('button',{name:'Add supplier'}));fireEvent.change(screen.getByLabelText('Supplier name'),{target:{value:'New vendor'}});fireEvent.click(screen.getByRole('button',{name:'Review supplier operation'}));fireEvent.click(await screen.findByRole('button',{name:'Confirm supplier operation'}));await screen.findByRole('button',{name:'Retry same supplier operation'});
  view.unmount();mount();fireEvent.click(screen.getByRole('button',{name:'Retry same supplier operation'}));
  await screen.findByText(/Supplier operation recorded/);expect(attempts).toHaveLength(2);expect(attempts[0]).toEqual(attempts[1]);expect((attempts[0] as {body:Record<string,unknown>}).body).not.toHaveProperty('supplier_id');expect(store.getState().supplierOperations.pending).toBeNull();
 });
 it('settles explicit invoices using an attested external-payment review and does not send a transfer',async()=>{
  let reviewed:Record<string,unknown>|null=null;let committed:Record<string,unknown>|null=null;
  vi.stubGlobal('fetch',vi.fn(async(request:Request)=>{if(request.method==='GET')return response(request.url.endsWith('/current')?{till:null}:overview);const body=await request.json();if(request.url.endsWith('/preview')){reviewed=body;return response({review_hash:'b'.repeat(64),amount:2000,allocated_amount:2000,external_transfer_executed:false});}committed=body;return response({payment:{id:'spay_one'},external_transfer_executed:false});}));
- mount();fireEvent.click(screen.getByRole('button',{name:'Payables'}));fireEvent.click(screen.getByRole('button',{name:'Record supplier payment'}));
+ mount();fireEvent.click(screen.getByRole('tab',{name:'Payables'}));fireEvent.click(screen.getByRole('button',{name:'Record supplier payment'}));
  await screen.findByRole('option',{name:'Rice supplier'});fireEvent.change(screen.getByLabelText('Supplier'),{target:{value:'sup_one'}});
  fireEvent.change(screen.getByLabelText('Payment reference'),{target:{value:'BANK-PAID-1'}});fireEvent.change(await screen.findByLabelText('Allocation for INV-ONE · unpaid TSh 5,000'),{target:{value:'2000'}});fireEvent.click(screen.getByLabelText('I have already completed this external payment; BiziSmart will only record it.'));
  fireEvent.click(screen.getByRole('button',{name:'Review supplier operation'}));fireEvent.click(await screen.findByRole('button',{name:'Confirm supplier operation'}));await screen.findByText(/Supplier operation recorded/);
@@ -37,6 +37,6 @@ it('settles explicit invoices using an attested external-payment review and does
 it('keeps stockkeeper financial queries disabled and clears private pending operations at sign-out',async()=>{
  const paths:string[]=[];vi.stubGlobal('fetch',vi.fn(async(request:Request)=>{paths.push(new URL(request.url).pathname);return response({suppliers:[{id:supplier.id,name:supplier.name}],orders:[]});}));
  store.dispatch(signedIn({token:'keeper-only',expires_at:'2099-01-01',user:keeper}));mount(keeper);await waitFor(()=>expect(paths).toContain('/api/v1/supplier-receiving'));
- expect(paths).not.toContain('/api/v1/suppliers');expect(paths).not.toContain('/api/v1/till-sessions/current');expect(screen.queryByRole('button',{name:'Payables'})).toBeNull();
+ expect(paths).not.toContain('/api/v1/suppliers');expect(paths).not.toContain('/api/v1/till-sessions/current');expect(screen.queryByRole('tab',{name:'Payables'})).toBeNull();
  store.dispatch(signedOut());expect(store.getState().supplierOperations.pending).toBeNull();
 });

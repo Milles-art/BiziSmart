@@ -1,3 +1,4 @@
+import {openCart,closeCart,openSaleTools} from './workspace-controls.js';
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
@@ -15,11 +16,18 @@ function otp(secret) {
   return String((hash.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, '0');
 }
 async function navigate(page, name) {
+  await closeCart(page);
   // MUI hides the background from accessibility queries until a closing dialog exits.
   await expect(page.getByRole('banner')).toBeVisible();
   const menu = page.getByRole('button', { name: 'Open navigation' });
   if (await menu.isVisible()) await menu.click();
   await page.getByRole('button', { name, exact: true }).click();
+  if (name === 'Products') {
+    // Detailed workflows explicitly retain the table option; cards have their own journey.
+    await page.getByRole('button', { name: 'List view', exact: true }).click();
+    const filters = page.getByRole('button', { name: 'Filters', exact: true });
+    if (await filters.getAttribute('aria-expanded') !== 'true') await filters.click();
+  }
 }
 
 // Each checkpoint has its own unchanged deadline; this serial journey shares only its browser context.
@@ -30,26 +38,22 @@ test.describe.serial('real owner workflow', () => {
     page = await context.newPage();
   });
   test.afterAll(async () => { await context?.close(); });
-test('owner creates a real account, enrols 2FA and survives reload', async ({}, info) => {
+test('owner creates an email account without MFA and survives reload', async ({}, info) => {
   label = info.project.name.startsWith('mobile') ? 'mobile' : 'desktop';
   fixture = JSON.parse(readFileSync('tmp/e2e-invitations.json', 'utf8'))[label];
   await page.goto(fixture.url);
   await expect(page.getByRole('heading', { name: 'Set up owner account' })).toBeVisible();
   expect(new URL(page.url()).hash).toBe('');
   await page.getByLabel('Owner name').fill('Browser shop owner');
-  await page.getByLabel('Phone Number').fill('0700000001');
-  await page.getByLabel('4–6 digit PIN').fill('654321');
-  await page.getByLabel('Confirm PIN').fill('654321');
-  await page.getByRole('button', { name: 'Create owner account' }).click();
-  await expect(page.getByRole('heading', { name: 'Set up your authenticator' })).toBeVisible();
-  secret = await page.locator('code').textContent();
-  await page.getByLabel('Authenticator code').fill(otp(secret));
+
+  await page.getByLabel('Email address').fill('0700000001@example.test');
+  await page.getByLabel('New password',{exact:true}).fill('browser-email-password-42');
+  await page.getByLabel('Confirm password',{exact:true}).fill('browser-email-password-42');
   // Finish the initial dashboard reads before reload; the local PHP server is serial.
   const dashboardLoaded = Promise.all(['reorder-alerts', 'expiry-alerts'].map(path => page.waitForResponse(response => response.url().includes(`/api/v1/stock/${path}`) && response.request().method() === 'GET' && response.ok())));
-  await page.getByRole('button', { name: 'Verify code' }).click();
+  await page.getByRole('button', { name: 'Create owner account' }).click();
   await expect(page.getByRole('heading', { name: 'Fresh Choice Browser Test' })).toBeVisible();
   await dashboardLoaded;
-  ownerTotpStep = Math.floor(Date.now() / 30000);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Fresh Choice Browser Test' })).toBeVisible();
   await expect(page.getByText('Quick demo login:')).toHaveCount(0);
@@ -167,19 +171,22 @@ test('owner receives stock and verifies guarded staff corrections', async ({}, i
   const createdKeeper = await page.evaluate(async () => {
     const token = JSON.parse(sessionStorage.getItem('bizismart.session.v1')).token;
     const result = await fetch('/api/v1/users', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ name: 'Browser stockkeeper', phone: '0712222222', pin: '4321', role: 'stockkeeper' }) });
-    return result.status;
+    const body = await result.json();
+    const activation = await fetch('/api/v1/auth/email/activation-link',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({user_id:body.data.id})});
+    return {status:result.status,url:(await activation.json()).data.setup_url};
   });
-  expect(createdKeeper).toBe(201);
+  expect(createdKeeper.status).toBe(201);
   const keeperContext = await page.context().browser().newContext(Object.fromEntries(Object.entries(info.project.use).filter(([key]) => ['viewport', 'deviceScaleFactor', 'isMobile', 'hasTouch', 'userAgent'].includes(key))));
   await keeperContext.addInitScript((device) => localStorage.setItem('bizismart.device.v1', device), ownerDevice);
   const keeper = await keeperContext.newPage();
-  await keeper.goto(new URL('/', page.url()).href);
-  await keeper.getByLabel('Phone Number').fill('0712222222');
-  await keeper.getByLabel('4–6 digit PIN').fill('4321');
-  await keeper.getByRole('button', { name: 'Sign In', exact: true }).click();
-  await keeper.getByLabel('New PIN', { exact: true }).fill('5678');
-  await keeper.getByLabel('Confirm PIN', { exact: true }).fill('5678');
-  await keeper.getByRole('button', { name: 'Save PIN', exact: true }).click();
+  const activationUrl=new URL(createdKeeper.url);activationUrl.protocol='http:';activationUrl.port='15173';
+  await keeper.goto(activationUrl.href);
+  await keeper.getByLabel('Email address').fill('0712222222@example.test');
+  await keeper.getByLabel('New password',{exact:true}).fill('browser-email-password-42');
+  await keeper.getByLabel('Confirm password',{exact:true}).fill('browser-email-password-42');
+  await keeper.getByRole('button',{name:'Activate account',exact:true}).click();
+  await keeper.getByLabel('Password',{exact:true}).fill('browser-email-password-42');
+  await keeper.getByRole('button',{name:'Sign In',exact:true}).click();
   await expect(keeper.getByRole('heading', { name: 'Fresh Choice Browser Test' })).toBeVisible();
   await navigate(keeper, 'Products');
   await keeper.getByRole('button', { name: 'Stock for Browser rice', exact: true }).click();
@@ -190,10 +197,8 @@ test('owner receives stock and verifies guarded staff corrections', async ({}, i
   await keeperCorrection.getByRole('button', { name: 'Review correction', exact: true }).click();
   await expect(keeperCorrection.getByText('After: 4.998 kg', { exact: true })).toBeVisible();
   await expect(keeperCorrection.getByRole('button', { name: 'Confirm correction', exact: true })).toBeDisabled();
-  await expect.poll(() => Math.floor(Date.now() / 30000), { timeout: 35000, intervals: [500] }).toBeGreaterThan(ownerTotpStep);
-  await keeperCorrection.getByLabel('Owner phone', { exact: true }).fill('0700000001');
-  await keeperCorrection.getByLabel('Owner PIN', { exact: true }).fill('654321');
-  await keeperCorrection.getByLabel('Owner authenticator code', { exact: true }).fill(otp(secret));
+  await keeperCorrection.getByLabel('Owner email', { exact: true }).fill('0700000001@example.test');
+  await keeperCorrection.getByLabel('Owner password', { exact: true }).fill('browser-email-password-42');
   await keeperCorrection.getByRole('button', { name: 'Request owner approval', exact: true }).click();
   await expect(keeperCorrection.getByText('Owner approval received for this correction.', { exact: true })).toBeVisible();
   await keeper.screenshot({ path: `tmp/live-correction-approval-${info.project.name}.png`, fullPage: true, animations: 'disabled' });
@@ -284,11 +289,10 @@ test('owner manages staff, devices and signs out', async ({}, info) => {
   const form = page.getByRole('dialog');
   await form.getByLabel('Full Name').fill('Real browser cashier');
   await form.getByLabel('Phone Number').fill('0711111111');
-  await form.getByLabel('Temporary PIN').fill('4321');
   await form.getByRole('button', { name: 'Add Staff', exact: true }).click();
   const card = page.getByLabel('Staff member Real browser cashier');
   await expect(card).toBeVisible();
-  await expect(card.getByText('PIN change required')).toBeVisible();
+  await expect(card.getByText('Sign-in setup needed')).toBeVisible();
   await card.getByRole('button', { name: 'Edit staff' }).click();
   await page.getByLabel('Full Name').fill('Updated server cashier');
   await page.getByLabel('Role', { exact: true }).selectOption('manager');
@@ -315,9 +319,19 @@ test('owner manages staff, devices and signs out', async ({}, info) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.locator('main').evaluate(el => { el.scrollTop = 0; });
   await page.screenshot({ path: `tmp/live-dashboard-design-${info.project.name}.png`, fullPage: true, animations: 'disabled' });
+  await page.evaluate(async () => {
+    const token=JSON.parse(sessionStorage.getItem('bizismart.session.v1')).token;
+    const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json'};
+    const list=await(await fetch('/api/v1/users',{headers})).json();
+    const user=list.data.users.find(u=>u.phone==='255711111111');
+    const link=await(await fetch('/api/v1/auth/email/activation-link',{method:'POST',headers,body:JSON.stringify({user_id:user.id})})).json();
+    const secret=new URL(link.data.setup_url).hash.split('=')[1];
+    const response=await fetch('/api/v1/auth/email/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:secret,email:'0711111111@example.test',password:'browser-email-password-42',password_confirmation:'browser-email-password-42'})});
+    if(!response.ok)throw new Error('Fixture cashier activation failed');
+  });
   // An unapproved real device must be rejected, then approved by the owner.
-  const pending = await page.request.post('http://127.0.0.1:15173/api/v1/auth/login', { headers: { Host: new URL(fixture.url).host }, data: {
-    phone: '0711111111', pin: '4321', device_uid: 'new-browser-device', device_name: 'New checkout browser',
+  const pending = await page.request.post('http://127.0.0.1:15173/api/v1/auth/email/login', { headers: { Host: new URL(fixture.url).host }, data: {
+    email: '0711111111@example.test', password: 'browser-email-password-42', device_uid: 'new-browser-device', device_name: 'New checkout browser',
   } });
   expect(pending.status()).toBe(403);
   await navigate(page, 'Settings');
@@ -348,8 +362,8 @@ test('cashier uses Laravel login, sees approved permissions, and cannot restore 
   }, label);
   await page.goto('http://e2e-shop.localhost:15173/');
   await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
-  await page.getByLabel('Phone Number').fill(label === 'mobile' ? '0711111102' : '0711111101');
-  await page.getByLabel('4–6 digit PIN').fill('2468');
+  await page.getByLabel('Email address').fill((label === 'mobile' ? '0711111102' : '0711111101')+'@example.test');
+  await page.getByLabel('Password',{exact:true}).fill('browser-email-password-42');
   await page.getByRole('button', { name: 'Sign In', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Browser Test Supermarket' })).toBeVisible();
   const menu = page.getByRole('button', { name: 'Open navigation' });
@@ -379,14 +393,14 @@ test('cashier uses Laravel login, sees approved permissions, and cannot restore 
   await page.screenshot({ path: `tmp/live-till-cards-design-${info.project.name}.png`, fullPage: true, animations: 'disabled' });
   await navigate(page, 'Point of Sale');
   await page.getByRole('button', { name: new RegExp(`Checkout water ${label}.*TSh`) }).click();
-  await page.getByLabel('Quantity · line 1').fill('99999');
-  await page.getByRole('button', { name: 'Review cash sale' }).click();
+  await openCart(page);await page.getByLabel('Quantity · line 1').fill('99999');
+  await openCart(page);await page.getByRole('button', { name: 'Review cash sale' }).click();
   let payment = page.getByRole('dialog', { name: 'Payment', exact: true });
   await payment.getByLabel('Cash tendered (TSh)').fill('849991500');
   await payment.getByRole('button', { name: 'Confirm cash payment' }).click();
   await expect(page.getByRole('alert')).toContainText('Not enough sellable stock');
-  await page.getByLabel('Quantity · line 1').fill('1');
-  await page.getByRole('button', { name: 'Review cash sale' }).click();
+  await openCart(page);await page.getByLabel('Quantity · line 1').fill('1');
+  await openCart(page);await page.getByRole('button', { name: 'Review cash sale' }).click();
   payment = page.getByRole('dialog', { name: 'Payment', exact: true });
   await expect(payment.getByText('TSh 8,500', { exact: true }).first()).toBeVisible();
   await expect(payment.getByRole('status')).toHaveText('Selcom mobile payments require merchant setup.');
@@ -416,12 +430,12 @@ test('cashier uses Laravel login, sees approved permissions, and cannot restore 
   for (const credit of ['3500', '8500']) {
     await expect(page.getByRole('banner')).toBeVisible();
     await page.getByRole('button', { name: new RegExp(`Checkout water ${label}.*TSh`) }).click();
-    await page.getByRole('button', { name: 'Choose customer', exact: true }).click();
+    await openCart(page);await page.getByRole('button', { name: 'Choose customer', exact: true }).click();
     await page.getByLabel('Find checkout customer').fill(customerName);
     await page.getByRole('button', { name: 'Find', exact: true }).click();
     await page.getByRole('button', { name: `${customerName} · No phone`, exact: true }).click();
     await page.getByLabel('Credit portion (TSh)').fill(credit);
-    await page.getByRole('button', { name: 'Review cash sale', exact: true }).click();
+    await openCart(page);await page.getByRole('button', { name: 'Review cash sale', exact: true }).click();
     const split = page.getByRole('dialog', { name: 'Payment', exact: true });
     await split.getByLabel('Cash tendered (TSh)').fill(credit === '3500' ? '5000' : '0');
     await split.getByRole('button', { name: 'Confirm sale', exact: true }).click();
@@ -449,7 +463,7 @@ test('cashier uses Laravel login, sees approved permissions, and cannot restore 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await navigate(page, 'Point of Sale');
   await page.getByRole('button', { name: new RegExp(`Checkout water ${label}.*TSh`) }).click();
-  await page.getByRole('button', { name: 'Refund', exact: true }).click();
+  await openSaleTools(page);await page.getByRole('button', { name: 'Refund', exact: true }).click();
   let returns = page.getByRole('dialog', { name: 'Returns & exchanges', exact: true });
   await returns.getByLabel('Receipt number').fill(cashReceiptNumber);
   await returns.getByLabel('Receipt number').press('Enter');
@@ -458,8 +472,8 @@ test('cashier uses Laravel login, sees approved permissions, and cannot restore 
   await returns.getByLabel(/Exchange with current cart/).check();
   await returns.getByRole('button', { name: 'Review return', exact: true }).click();
   await expect(returns.getByText('Cash to collect: TSh 0', { exact: true })).toBeVisible();
-  await returns.getByLabel('Supervisor phone').fill(label === 'mobile' ? '0711111104' : '0711111103');
-  await returns.getByLabel('Supervisor PIN').fill('3579');
+  await returns.getByLabel('Supervisor email').fill((label === 'mobile' ? '0711111104' : '0711111103')+'@example.test');
+  await returns.getByLabel('Supervisor password').fill('browser-email-password-42');
   await returns.getByRole('button', { name: 'Request return approval', exact: true }).click();
   await expect(returns.getByText('Supervisor approval received.')).toBeVisible();
   await page.screenshot({ path: `tmp/live-exchange-review-${info.project.name}.png`, fullPage: true, animations: 'disabled' });
@@ -467,7 +481,7 @@ test('cashier uses Laravel login, sees approved permissions, and cannot restore 
   await expect(returns.getByText('Return completed', { exact: true })).toBeVisible();
   const replacementReceiptNumber = (await returns.getByText(/Replacement receipt:/).innerText()).replace('Replacement receipt: ', '');
   await returns.getByRole('button', { name: 'Done', exact: true }).click();
-  await page.getByRole('button', { name: 'Refund', exact: true }).click();
+  await openSaleTools(page);await page.getByRole('button', { name: 'Refund', exact: true }).click();
   returns = page.getByRole('dialog', { name: 'Returns & exchanges', exact: true });
   await returns.getByLabel('Receipt number').fill(replacementReceiptNumber);
   await returns.getByRole('button', { name: 'Find receipt', exact: true }).click();
@@ -477,8 +491,8 @@ test('cashier uses Laravel login, sees approved permissions, and cannot restore 
   await returns.getByRole('button', { name: 'Review return', exact: true }).click();
   await expect(returns.getByText('Cash to pay: TSh 8,500', { exact: true })).toBeVisible();
   await expect(returns.getByText(/separate quarantined batches/)).toBeVisible();
-  await returns.getByLabel('Supervisor phone').fill(label === 'mobile' ? '0711111104' : '0711111103');
-  await returns.getByLabel('Supervisor PIN').fill('3579');
+  await returns.getByLabel('Supervisor email').fill((label === 'mobile' ? '0711111104' : '0711111103')+'@example.test');
+  await returns.getByLabel('Supervisor password').fill('browser-email-password-42');
   await returns.getByRole('button', { name: 'Request return approval', exact: true }).click();
   await expect(returns.getByText('Supervisor approval received.')).toBeVisible();
   await page.screenshot({ path: `tmp/live-return-review-${info.project.name}.png`, fullPage: true, animations: 'disabled' });
@@ -500,8 +514,8 @@ test('cashier uses Laravel login, sees approved permissions, and cannot restore 
   await tillDialog.getByRole('button', { name: 'Review closing cash' }).click();
   await expect(tillDialog.getByText('Expected: TSh 25,000')).toBeVisible();
   await expect(tillDialog.getByRole('button', { name: 'Confirm close' })).toBeDisabled();
-  await tillDialog.getByLabel('Supervisor phone').fill(label === 'mobile' ? '0711111104' : '0711111103');
-  await tillDialog.getByLabel('Supervisor PIN').fill('3579');
+  await tillDialog.getByLabel('Supervisor email').fill((label === 'mobile' ? '0711111104' : '0711111103')+'@example.test');
+  await tillDialog.getByLabel('Supervisor password').fill('browser-email-password-42');
   await tillDialog.getByRole('button', { name: 'Request variance approval' }).click();
   await expect(tillDialog.getByText('Supervisor approval received.')).toBeVisible();
   await page.screenshot({ path: `tmp/live-till-review-${info.project.name}.png`, fullPage: true, animations: 'disabled' });
