@@ -45,7 +45,7 @@ it('commits a cash receipt exact VAT stock and net till cash once',function () {
         ->assertJsonMissingPath('data.business_id')->assertJsonMissingPath('data.device_id')->assertJsonMissingPath('data.lines.0.buying_price')->json('data');
     $this->postJson(saleTestUrl(),$body)->assertOk()->assertJsonPath('data.id',$sale['id'])->assertJsonPath('data.replayed',true);
     $this->getJson(saleTestUrl('/'.$sale['id']))->assertOk()->assertJsonPath('data.receipt_number',$sale['receipt_number']);
-    $this->context->run($this->alpha,function () { expect(Sale::count())->toBe(1); expect(SaleItem::count())->toBe(1); expect(SalePayment::count())->toBe(1); expect(TillCashEntry::count())->toBe(1); expect(ProductBatch::sum('qty_remaining_atoms'))->toBe('19'); expect(app(TillService::class)->current($this->alphaCashier)['till']['expected_cash'])->toBe(28500); });
+    $this->context->run($this->alpha,function () { expect(Sale::count())->toBe(1); expect(SaleItem::count())->toBe(1); expect(SalePayment::count())->toBe(1); expect(TillCashEntry::count())->toBe(1); expect(ProductBatch::sum('qty_remaining_atoms'))->toBe('19'); expect(app(TillService::class)->view((new TillSession)->resolveRouteBinding($this->alphaTill['id']))['expected_cash'])->toBe(28500); });
     $this->postJson(saleTestUrl(),[...$body,'cash_tendered'=>10001])->assertConflict()->assertJsonPath('error.code','OPERATION_ID_REUSED');
 });
 it('allocates dated stock before undated skipping expired quarantined and recalled batches',function () {
@@ -91,7 +91,7 @@ it('replays a saved receipt after prices change product archives and till closes
     $body=cashSaleBody($this); $this->withHeader('Idempotency-Key',(string)Str::uuid()); $id=$this->postJson(saleTestUrl(),$body)->assertCreated()->json('data.id');
     $this->context->run($this->alpha,function () {
         $this->alphaProduct->update(['selling_price'=>9000]); $this->alphaProduct->delete();
-        $r=app(TillService::class)->preview($this->alphaCashier,['operation_id'=>(string)Str::uuid(),'till_id'=>$this->alphaTill['id'],'counted_cash'=>28500]);
+        $r=app(TillService::class)->closeReview($this->alphaCashier,['operation_id'=>(string)Str::uuid(),'till_id'=>$this->alphaTill['id'],'counted_cash'=>28500]);
         $commit=$r['snapshot']; unset($commit['branch_id']); app(TillService::class)->close($this->alphaCashier,$commit);
     });
     $this->postJson(saleTestUrl(),$body)->assertOk()->assertJsonPath('data.id',$id)->assertJsonPath('data.total',8500);

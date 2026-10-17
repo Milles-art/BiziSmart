@@ -22,7 +22,7 @@ class EnterpriseService
 
     private function owner(User $original): User
     {
-        $actor = $this->actors->lockSession($original);
+        $actor = $this->actors->lock($original, null);
         if (! $actor->hasRole('owner') || (array) $actor->currentAccessToken()->abilities !== ['*']) {
             throw new AuthorizationException;
         }

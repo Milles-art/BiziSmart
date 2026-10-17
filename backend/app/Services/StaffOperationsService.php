@@ -9,7 +9,7 @@ use Carbon\CarbonImmutable;
 
 class StaffOperationsService {
     public function __construct(private TenantContext $context,private FinancialActorService $actors,private StockService $stock){}
-    private function actor(User $original):User {$actor=$this->actors->lockSession($original);Business::whereKey($this->context->requireId())->where('is_active',true)->lockForUpdate()->firstOrFail();return $actor;}
+    private function actor(User $original):User {$actor=$this->actors->lock($original,null);Business::whereKey($this->context->requireId())->where('is_active',true)->lockForUpdate()->firstOrFail();return $actor;}
     private function owner(User $actor):void {if(!$actor->hasRole('owner')||!$actor->can('manage_users'))throw new AuthorizationException;}
     public function overview(User $original):array {
         return DB::transaction(function()use($original){$actor=$this->actor($original);

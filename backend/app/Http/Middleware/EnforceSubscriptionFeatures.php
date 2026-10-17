@@ -1,15 +1,15 @@
 <?php
 namespace App\Http\Middleware;
 use App\Exceptions\ApiException;
-use App\Models\Subscription;
 use App\Services\PlanFeatureService;
+use App\Services\SubscriptionService;
 use Closure;
 use Illuminate\Http\Request;
 class EnforceSubscriptionFeatures {
     public function handle(Request $request,Closure $next){
         // Sign-in and a read-only status message stay reachable; operational tokens are gated.
         if($request->is('api/v1/auth/*','api/v1/subscription-status'))return $next($request);
-        $s=Subscription::first();if($s&&($s->status!=='active'||$s->starts_at->isFuture()||!$s->ends_at->isFuture()))throw new ApiException('SUBSCRIPTION_INACTIVE','This shop subscription is inactive. Ask your owner to contact BiziSmart.',403);
+        if(!app(SubscriptionService::class)->active())throw new ApiException('SUBSCRIPTION_INACTIVE','This shop subscription is inactive. Ask your owner to contact BiziSmart.',403);
         $path=substr($request->path(),strlen('api/v1/'));
         // An integration alias adds API entitlement; it never replaces the underlying module entitlement.
         if($path==='enterprise'||str_starts_with($path,'enterprise/')){

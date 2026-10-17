@@ -1,5 +1,6 @@
 import {offlineKiswahili} from './offlineKiswahili';
 import {messagingKiswahili} from './messagingKiswahili';
+import {shopUxKiswahili} from './shopUxKiswahili';
 import {financeKiswahili} from './financeKiswahili';
 import {bankingKiswahili} from './bankingKiswahili';
 import {displayLoyaltyKiswahili} from './displayLoyaltyKiswahili';
@@ -8,6 +9,7 @@ import {lossKiswahili} from './lossKiswahili';
 export const kiswahili: Record<string, string> = {
   ...messagingKiswahili,
   ...offlineKiswahili,
+  ...shopUxKiswahili,
   ...financeKiswahili,
   ...bankingKiswahili,
   ...displayLoyaltyKiswahili,

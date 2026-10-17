@@ -100,7 +100,7 @@ it('rejects invalid import rows, changed reviews and rolls back every stock rece
     $this->postJson(priceTestUrl('/import-stock'), [...$body, 'review_hash' => $review])->assertStatus(409)->assertJsonPath('error.code', 'IMPORT_REVIEW_CHANGED');
     $body['rows'][] = [...$row, 'barcode' => 'OTHER', 'batch_number' => 'FAIL'];
     $review = $this->postJson(priceTestUrl('/import-stock/preview'), $body)->assertOk()->json('data.review_hash');
-    $stock = new class($this->context) extends \App\Services\StockService {
+    $stock = new class($this->context, new \App\Services\StockReceivingService($this->context), new \App\Services\StockAdjustmentService($this->context, new \App\Services\FinancialActorService)) extends \App\Services\StockService {
         public function receive(User $actor, Product $product, array $input): array {
             if ($input['batch_number'] === 'FAIL') { throw new \App\Exceptions\ApiException('INJECTED_FAILURE', 'Injected stock receipt failure.', 409); }
             return parent::receive($actor, $product, $input);

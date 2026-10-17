@@ -4,6 +4,7 @@ namespace App\Http\Requests\Auth;
 
 use Illuminate\Validation\Rule;
 use App\Services\SupervisorApprovalService;
+use App\Support\Money;
 
 class SupervisorCheckRequest extends LoginRequest
 {
@@ -23,6 +24,11 @@ class SupervisorCheckRequest extends LoginRequest
         }
         return [...$rules, 'permission' => ['required', Rule::in(SupervisorApprovalService::PERMISSIONS)],
             'operation_id' => ['required', 'uuid'], 'payload_hash' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/D'],
-            'code' => ['sometimes', 'string', 'regex:/^[0-9]{6}$/D']];
+            'code' => ['sometimes', 'string', 'regex:/^[0-9]{6}$/D'],
+            // Blind close: a variance approval is bound to the closer's exact till and count, recomputed server-side.
+            'till_id' => ['sometimes', 'required_with:counted_cash', 'string', 'regex:/^till_[0-9A-HJKMNP-TV-Z]{26}$/D'],
+            'counted_cash' => ['sometimes', 'required_with:till_id', function ($attribute, $value, $fail) {
+                try { Money::amount($value); } catch (\InvalidArgumentException|\OverflowException $e) { $fail($e->getMessage()); }
+            }]];
     }
 }

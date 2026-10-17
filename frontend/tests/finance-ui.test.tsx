@@ -20,12 +20,12 @@ beforeEach(() => { const controller = transferableAbortController(); vi.stubGlob
 afterEach(() => { cleanup(); store.dispatch(liveApi.util.resetApiState()); vi.unstubAllGlobals(); });
 it('does not fabricate zero financial totals when the report request fails', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => response({ error: { code: 'FORBIDDEN', message: 'Reports unavailable' } }, 403)));
-  mount(<Reports />); await screen.findByRole('alert'); expect(screen.getByText('Reports unavailable')).toBeTruthy(); expect(screen.queryByText('Net sales')).toBeNull(); expect(screen.queryByText('TSh 0')).toBeNull();
+  mount(<Reports actor={owner} />); await screen.findByRole('alert'); expect(screen.getByText('Reports unavailable')).toBeTruthy(); expect(screen.queryByText('Net sales')).toBeNull(); expect(screen.queryByText('TSh 0')).toBeNull();
 });
 it('renders exact server profit and commission results and submits the selected report window', async () => {
   const windows: string[][] = [];
   vi.stubGlobal('fetch', vi.fn(async (request: Request) => { const url = new URL(request.url); windows.push([url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '']); return response({ data: { period: {}, summary: { net_revenue: 10000, net_cogs: 7000, gross_profit: 3000, net_expenses: 500, commission_accrual: 200, net_profit: 2300, cashflow_in: 14000, cashflow_out: 2000, net_cashflow: 12000, net_output_vat: 1800, legacy_cost_allocations: 0 }, stock: { recorded_value: 9000, sellable_value: 8000, held_value: 1000, negative_batches: 0 }, outstanding_customer_debt: 4000, generated_at: '2026-10-13T12:00:00Z', basis: 'journals', scope: 'business', tax_basis: 'stored VAT' } }); }));
-  mount(<Reports />); await screen.findByText('TSh 2,300'); expect(screen.getByText('Commission accrual')).toBeTruthy(); expect(screen.getByText('TSh 200')).toBeTruthy();
+  mount(<Reports actor={owner} />); await screen.findByText('TSh 2,300'); expect(screen.getByText('Commission accrual')).toBeTruthy(); expect(screen.getByText('TSh 200')).toBeTruthy();
   fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-01' } }); fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-10-13' } }); fireEvent.click(screen.getByRole('button', { name: 'Run report' })); await waitFor(() => expect(windows).toContainEqual(['2026-10-01', '2026-10-13']));
 });
 it('retries an uncertain expense through navigation with the same immutable reviewed UUID and body', async () => {

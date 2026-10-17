@@ -24,6 +24,7 @@ import { Inventory } from './features/live/Inventory';
 import { Dashboard } from './features/live/Dashboard';
 import { POS } from './features/live/POS';
 import { Customers } from './features/live/Customers';
+import { AppUpdateBanner } from './features/live/AppUpdateBanner';
 import { errorMessage, liveApi, signedOut, useMeQuery, useLogoutMutation, type CatalogueFilters, type SessionState } from './features/live/api';
 import { useSessionLifetime } from './features/live/useSessionLifetime';
 import type { Screen } from './types';
@@ -76,19 +77,20 @@ function Workspace() {
     : screen === 'settings' ? <SettingsWorkspace actor={data.user} shopName={data.business.name} features={data.features}/>
     : screen === 'inventory' ? <Inventory actor={data.user} onNavigate={navigate} />
     : screen === 'suppliers' ? <Suppliers actor={data.user}/>
-    : screen === 'reports' ? <Reports/>
+    : screen === 'reports' ? <Reports actor={data.user}/>
     : screen === 'banking' ? <div className="space-y-5 p-4 lg:p-6"><Banking/></div>
     : screen === 'messaging' ? <Messaging/>
     : screen === 'offline' ? <><OfflinePOS actor={data.user} onClose={()=>navigate('dashboard')} onLockChange={setOfflineLocked}/>{data.user.role==='owner'&&<OfflineQuarantine actor={data.user} onInventory={()=>navigate('inventory')}/>}</>
     : screen === 'tills' ? <><Tills actor={data.user} onReports={canAccessScreen('reports')?()=>navigate('reports'):undefined}/><div className="px-4 pb-4 lg:px-6"><CashDrops actor={data.user}/></div></>
     : screen === 'dashboard' ? <Dashboard shopName={data.business.name} actor={data.user} onNavigate={navigate} />
     : screen === 'pos' ? <POS actor={data.user} shopName={data.business.name} onNavigate={navigate} />
-    : screen === 'customers' ? <Customers />
+    : screen === 'customers' ? <Customers actor={data.user} />
     : <Unavailable title="This tool is not available yet" message="Your shop account is ready. This part of the supermarket workflow is still being implemented." />;
   return <div className="biz-workspace flex h-screen overflow-hidden bg-slate-100">
     <Sidebar screen={screen} onNavigate={navigate} open={sidebarOpen} onClose={() => setSidebarOpen(false)} store={store}/>
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden"><TopBar screen={screen} onMenuClick={() => setSidebarOpen(true)} store={store}/>
       <main ref={mainRef} className="workspace-content min-w-0 flex-1 overflow-y-auto">
+        <AppUpdateBanner/>
         {offlineLocked&&navigationNotice&&<p role="alert" className="m-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{translate(navigationNotice)}</p>}
         <MessagingRecovery/>
         {screen==='dashboard'&&data.user.role==='owner'&&<><OwnerPayments/>{data.features?.offline!==false&&<OfflineQuarantine actor={data.user} onInventory={()=>navigate('inventory')}/>}</>}

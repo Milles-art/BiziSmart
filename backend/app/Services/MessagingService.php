@@ -53,7 +53,7 @@ class MessagingService {
         catch(\Illuminate\Database\UniqueConstraintViolationException){DB::transaction(function()use($row){$fresh=MessageDelivery::whereKey($row->id)->lockForUpdate()->firstOrFail();if($fresh->status!=='dispatching')return;$fresh->status='uncertain';$fresh->failure_code='PROVIDER_ID_CONFLICT';$fresh->save();},3);}
     }
     private function eligible(MessageDelivery $r):bool {
-        $s=Subscription::first();if($s&&($s->status!=='active'||$s->starts_at->isFuture()||!$s->ends_at->isFuture()))return false;
+        if(!app(SubscriptionService::class)->active())return false;
         if($r->customer_id){$c=Customer::find($r->customer_id);if(!$c||$c->phone!==$r->recipient)return false;$p=$this->consent($c);return $p[$r->channel]&&$p[$r->purpose];}
         $u=User::find($r->user_id);$p=NotificationPreference::where('user_id',$r->user_id)->first();return $u&&$u->is_active&&$u->hasRole('owner')&&$u->phone===$r->recipient&&$p?->{$r->channel};
     }

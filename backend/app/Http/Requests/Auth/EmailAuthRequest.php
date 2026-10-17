@@ -38,6 +38,13 @@ class EmailAuthRequest extends FormRequest
                 'phone' => ['sometimes', 'string', 'max:32', function ($attribute, $value, $fail) {
                     try { StaffPhone::normalize($value); } catch (\InvalidArgumentException) { $fail('Enter a Tanzania phone number.'); }
                 }], ...$device],
+            // Public shop registration. The shop address comes from the request host,
+            // so any tenant identifier in the body is rejected outright.
+            'register' => ['shop_name' => ['required', 'string', 'max:120'], 'name' => ['required', 'string', 'max:100'],
+                'phone' => ['required', 'string', 'max:32', function ($attribute, $value, $fail) {
+                    try { StaffPhone::normalize($value); } catch (\InvalidArgumentException) { $fail('Enter a Tanzania phone number.'); }
+                }], 'email' => $email, 'password' => $password, ...$device,
+                'business_id' => ['prohibited'], 'subdomain' => ['prohibited']],
             default => [],
         };
     }

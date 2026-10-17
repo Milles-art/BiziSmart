@@ -1,5 +1,5 @@
 <?php
-use App\Models\{Business,Branch,Customer,CustomerPayment,DebtAllocation,Device,Plan,User,Product,Sale,SaleDebt,SalePayment,StockMovement,TillCashEntry,PersonalAccessToken};
+use App\Models\{Business,Branch,Customer,CustomerPayment,DebtAllocation,Device,Plan,User,Product,Sale,SaleDebt,SalePayment,StockMovement,TillCashEntry,TillSession,PersonalAccessToken};
 use App\Services\{StaffRoleService,StockService,TillService,SaleService};
 use App\Tenancy\TenantContext;
 use Illuminate\Support\{Str,Facades\Concurrency};
@@ -78,7 +78,7 @@ it('enforces credit limits while preserving full-credit and split cash journals'
     $sale=debtSale($this,20000,'3');expect($sale['change_given'])->toBe(0);expect(array_column($sale['payments'],'amount'))->toBe([10000,20000]);
     $this->getJson(debtUrl('/'.$this->alphaCustomer->publicId().'/debt'))->assertOk()->assertJsonPath('data.outstanding_balance',50000);
     $this->putJson(debtUrl('/'.$this->alphaCustomer->publicId()),['credit_limit'=>1000])->assertOk()->assertJsonPath('data.outstanding_balance',50000);
-    $this->context->run($this->alpha,function () {expect(TillCashEntry::count())->toBe(1);expect(SaleDebt::sum('remaining_amount'))->toBe('50000');expect(app(TillService::class)->current($this->alphaCashier)['till']['expected_cash'])->toBe(10000);});
+    $this->context->run($this->alpha,function () {expect(TillCashEntry::count())->toBe(1);expect(SaleDebt::sum('remaining_amount'))->toBe('50000');expect(app(TillService::class)->view((new TillSession)->resolveRouteBinding($this->alphaTill['id']))['expected_cash'])->toBe(10000);});
 });
 it('settles only staff-selected invoices and adds cash once with immutable replays',function () {
     $older=debtSale($this);$newer=debtSale($this);
@@ -88,7 +88,7 @@ it('settles only staff-selected invoices and adds cash once with immutable repla
     $this->postJson(debtUrl($path),[...$body,'amount'=>4999])->assertConflict()->assertJsonPath('error.code','OPERATION_ID_REUSED');
     $this->context->run($this->alpha,function () use ($older,$newer) {expect(CustomerPayment::count())->toBe(1);expect(DebtAllocation::count())->toBe(1);expect(Customer::find($this->alphaCustomer->id)->outstanding_balance)->toBe(15000);
         foreach([$older['id']=>10000,$newer['id']=>5000] as $id=>$balance){$sale=(new Sale)->resolveRouteBinding($id);expect(SaleDebt::where('sale_id',$sale->id)->first()->remaining_amount)->toBe($balance);}
-        expect(app(TillService::class)->current($this->alphaCashier)['till']['expected_cash'])->toBe(5000);
+        expect(app(TillService::class)->view((new TillSession)->resolveRouteBinding($this->alphaTill['id']))['expected_cash'])->toBe(5000);
     });
 });
 it('rejects overpayments mismatched allocations and other-customer invoices without mutations',function () {

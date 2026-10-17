@@ -66,7 +66,7 @@ it('persists the payment before a single order and push then allocates the verif
     mobileConfirmFake($payment['id']);$this->getJson(paymentUrl('/'.$payment['id']))->assertOk()->assertJsonPath('data.status','confirmed');
     $sale=$this->postJson(paymentUrl('/'.$payment['id'].'/complete'))->assertOk()->assertJsonPath('data.total',8500)->assertJsonPath('data.change_given',500)->assertJsonPath('data.payments.1.method','mpesa')->assertJsonPath('data.payments.1.amount',6000)->json('data');
     $this->postJson(paymentUrl('/'.$payment['id'].'/complete'))->assertOk()->assertJsonPath('data.id',$sale['id'])->assertJsonPath('data.replayed',true);
-    $this->context->run($this->alpha,function(){expect(Sale::count())->toBe(1);expect(MobilePayment::first()->status)->toBe('allocated');expect(ProductBatch::sum('qty_remaining_atoms'))->toBe('19');expect(app(TillService::class)->current($this->alphaCashier)['till']['expected_cash'])->toBe(22500);});
+    $this->context->run($this->alpha,function(){expect(Sale::count())->toBe(1);expect(MobilePayment::first()->status)->toBe('allocated');expect(ProductBatch::sum('qty_remaining_atoms'))->toBe('19');expect(app(TillService::class)->view((new TillSession)->resolveRouteBinding($this->alphaTill['id']))['expected_cash'])->toBe(22500);});
 });
 
 it('rejects unconfigured collection and overselling before contacting Selcom',function(){
@@ -147,7 +147,7 @@ it('allocates cash mobile and customer credit without adding mobile money to cas
     $p=$this->withHeader('Idempotency-Key',(string)Str::uuid())->postJson(paymentUrl('/selcom'),$body)->assertOk()->json('data');
     notifyMobile($this,$p['id']);mobileConfirmFake($p['id'],['amount'=>'5000']);$this->getJson(paymentUrl('/'.$p['id']))->assertOk();
     $this->postJson(paymentUrl('/'.$p['id'].'/complete'))->assertOk()->assertJsonPath('data.change_given',500)->assertJsonCount(3,'data.payments');
-    $this->context->run($this->alpha,function()use($customer){expect($customer->fresh()->outstanding_balance)->toBe(1500);expect(app(TillService::class)->current($this->alphaCashier)['till']['expected_cash'])->toBe(22000);});
+    $this->context->run($this->alpha,function()use($customer){expect($customer->fresh()->outstanding_balance)->toBe(1500);expect(app(TillService::class)->view((new TillSession)->resolveRouteBinding($this->alphaTill['id']))['expected_cash'])->toBe(22000);});
 });
 
 it('reconciles due payments with the scheduler and leaves a declined payment unsold',function(){
@@ -219,7 +219,7 @@ it('returns a split-payment receipt proportionally with an approved external mob
  $result=$this->withHeader('Idempotency-Key',$base['operation_id'])->postJson('http://alpha.bizismart.test/api/v1/returns',$commit)->assertCreated()->assertJsonPath('data.cash_paid',2500)->assertJsonPath('data.mobile_refund',6000)->assertJsonPath('data.external_transfer_executed',false)->json('data');
  $this->postJson('http://alpha.bizismart.test/api/v1/returns',$commit)->assertOk()->assertJsonPath('data.id',$result['id'])->assertJsonPath('data.replayed',true);
  Http::assertSentCount(1);
- $this->context->run($this->alpha,function(){expect(app(TillService::class)->current($this->alphaCashier)['till']['expected_cash'])->toBe(20000);expect(ProductBatch::sum('qty_remaining_atoms'))->toBe('20');expect(\App\Models\SaleReturn::count())->toBe(1);});
+ $this->context->run($this->alpha,function(){expect(app(TillService::class)->view((new TillSession)->resolveRouteBinding($this->alphaTill['id']))['expected_cash'])->toBe(20000);expect(ProductBatch::sum('qty_remaining_atoms'))->toBe('20');expect(\App\Models\SaleReturn::count())->toBe(1);});
 });
 
 it('rejects an extraneous discount grant on an undiscounted mobile sale before provider dispatch',function(){

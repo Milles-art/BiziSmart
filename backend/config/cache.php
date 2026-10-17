@@ -16,7 +16,10 @@ return [
     */
 
     'default' => env('CACHE_STORE', 'database'),
-    'limiter' => env('CACHE_LIMITER', 'file'),
+
+    // Rate-limiter store. Unset follows 'default' (see CacheServiceProvider:
+    // driver(null) resolves the default store); app code falls back with ?: too.
+    'limiter' => env('CACHE_LIMITER') ?: null,
 
     /*
     |--------------------------------------------------------------------------

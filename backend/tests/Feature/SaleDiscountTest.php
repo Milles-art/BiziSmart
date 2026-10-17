@@ -1,5 +1,5 @@
 <?php
-use App\Models\{Business,Branch,Customer,Device,Plan,Product,ProductBatch,Sale,SaleDebt,StockMovement,SupervisorApproval,TillCashEntry,User};
+use App\Models\{Business,Branch,Customer,Device,Plan,Product,ProductBatch,Sale,SaleDebt,StockMovement,SupervisorApproval,TillCashEntry,TillSession,User};
 use App\Services\{StaffRoleService,StockService,TillService,SaleService};
 use App\Tenancy\TenantContext;
 use Illuminate\Support\Str;
@@ -60,7 +60,7 @@ it('saves exact line and proportional cart discounts and refunds only original n
     $review=$this->postJson('http://alpha.bizismart.test/api/v1/returns/preview',$return)->assertOk()->assertJsonPath('data.refund_total',11625)->json('data');
     $grant=$this->postJson('http://alpha.bizismart.test/api/v1/auth/supervisor-check',['phone'=>'0710000002','pin'=>'1234','permission'=>'refund','operation_id'=>$return['operation_id'],'payload_hash'=>$review['review_hash']])->assertOk()->json('data.approval_token');
     $this->withHeader('Idempotency-Key',$return['operation_id'])->postJson('http://alpha.bizismart.test/api/v1/returns',[...$return,'review_hash'=>$review['review_hash'],'approval_token'=>$grant])->assertCreated()->assertJsonPath('data.cash_refund',11625);
-    $this->context->run($this->alpha,function(){expect(app(TillService::class)->current($this->alphaCashier)['till']['expected_cash'])->toBe(23875);expect(Sale::first()->discount_reason)->toBe('Customer goodwill');});
+    $this->context->run($this->alpha,function(){expect(app(TillService::class)->view((new TillSession)->resolveRouteBinding($this->alphaTill['id']))['expected_cash'])->toBe(23875);expect(Sale::first()->discount_reason)->toBe('Customer goodwill');});
 });
 it('replays a completed discounted sale after consuming the grant without duplicate financial writes',function(){
     $commit=discountCommitBody($this);$this->withHeader('Idempotency-Key',$commit['key']);

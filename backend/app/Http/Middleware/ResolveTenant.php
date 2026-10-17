@@ -34,6 +34,11 @@ class ResolveTenant
             }
             $business = Business::query()->where('subdomain', $subdomain)->where('is_active', true)->first();
             if ($business === null) {
+                // A never-used shop address may still be claimed by its owner through
+                // public registration; the service creates the tenant for this host.
+                if ($request->routeIs('auth.register', 'auth.register.status')) {
+                    return $next($request);
+                }
                 throw new ApiException('NOT_FOUND', 'The requested resource was not found.', 404);
             }
             $this->context->set($business);

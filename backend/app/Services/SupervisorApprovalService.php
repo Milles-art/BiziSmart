@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Exceptions\ApiException;
-use App\Models\Device;
 use App\Models\Branch;
 use App\Models\PersonalAccessToken;
 use App\Models\SupervisorApproval;
@@ -28,7 +27,7 @@ class SupervisorApprovalService
             $candidate = $emailCredentials ? User::forEmail($input['email'])->first() : User::forPhone($input['phone'])->first();
             $users = $this->lockUsers($requester->id, $candidate?->id);
             $actor = $users->get($requester->id);
-            $session = $this->session($requester, $actor, $input['permission']);
+            $session = $this->session($requester, $input['permission']);
             $approver = $candidate ? $users->get($candidate->id) : null;
             $valid = Hash::check($emailCredentials ? $input['password'] : $input['pin'],
                 $emailCredentials ? ($approver?->password_hash ?? $dummy) : ($approver?->pin_hash ?? $dummy));
@@ -60,17 +59,31 @@ class SupervisorApprovalService
                 $approver->save();
             }
             $operation = strtolower($input['operation_id']);
+            // Blind close: for a till variance the authoritative numbers are computed here, only after
+            // the approver has authenticated, and the approval binds to that fresh server review.
+            $payloadHash = $input['payload_hash'];
+            $review = null;
+            if ($input['permission'] === 'approve_variance' && isset($input['till_id'], $input['counted_cash'])) {
+                $review = app(TillService::class)->closeReview($requester, ['operation_id' => $operation,
+                    'till_id' => $input['till_id'], 'counted_cash' => $input['counted_cash']]);
+                $payloadHash = $review['payload_hash'];
+            }
             SupervisorApproval::where('requester_token_id', $session->id)->where('operation_id', $operation)
                 ->where('permission', $input['permission'])->whereNull('consumed_at')->delete();
             $plain = bin2hex(random_bytes(32));
             $approval = SupervisorApproval::create(['requester_id' => $actor->id, 'approver_id' => $approver->id,
                 'requester_token_id' => $session->id, 'device_id' => $session->device_id, 'permission' => $input['permission'],
-                'operation_id' => $operation, 'payload_hash' => $input['payload_hash'], 'token_hash' => hash('sha256', $plain),
+                'operation_id' => $operation, 'payload_hash' => $payloadHash, 'token_hash' => hash('sha256', $plain),
                 'expires_at' => now()->addMinutes(5)]);
             activity('staff')->performedOn($approval)->causedBy($approver)->event('supervisor_approval_issued')
                 ->withProperties(['permission' => $approval->permission, 'requester' => $actor->publicId(),
                     'approval' => $approval->publicId(), 'operation_id' => $approval->operation_id])->log('Supervisor approval issued');
-            return ['approved_by' => $approver->publicId(), 'approval_token' => $plain, 'expires_at' => $approval->expires_at->toISOString()];
+            $result = ['approved_by' => $approver->publicId(), 'approval_token' => $plain, 'expires_at' => $approval->expires_at->toISOString()];
+            if ($review !== null) {
+                $result['review'] = ['counted_cash' => $review['counted_cash'], 'expected_cash' => $review['expected_cash'],
+                    'variance' => $review['variance'], 'variance_limit' => $review['variance_limit']];
+            }
+            return $result;
         }, 3);
         if ($result instanceof ApiException) { throw $result; }
         return $result;
@@ -86,7 +99,7 @@ class SupervisorApprovalService
             if (! $snapshot) { throw $this->invalidApproval(); }
             $users = $this->lockUsers($requester->id, $snapshot->approver_id);
             $actor = $users->get($requester->id);
-            $session = $this->session($requester, $actor, $permission);
+            $session = $this->session($requester, $permission);
             $approver = $users->get($snapshot->approver_id);
             $approval = SupervisorApproval::whereKey($snapshot->id)->lockForUpdate()->first();
             if (! $approval || $approval->consumed_at || ! $approval->expires_at->isFuture()
@@ -131,21 +144,17 @@ class SupervisorApprovalService
         return User::whereIn('id', array_unique(array_filter([$requesterId, $approverId])))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
     }
 
-    private function session(User $original, ?User $fresh, string $permission): PersonalAccessToken
+    private function session(User $original, string $permission): PersonalAccessToken
     {
         if (! in_array($permission, self::PERMISSIONS, true)) { throw new ApiException('VALIDATION_ERROR', 'Unsupported approval permission.', 422, 'permission'); }
-        $token = $original->currentAccessToken();
-        if (! $fresh || ! $fresh->is_active || $fresh->must_change_pin || $fresh->getRoleNames()->count() !== 1
-            || ($fresh->hasRole('owner') && ! $fresh->ownerAuthenticationReady())) { throw new \Illuminate\Auth\AuthenticationException; }
-        $current = $token ? PersonalAccessToken::whereKey($token->id)->where('tokenable_id', $fresh->id)->lockForUpdate()->first() : null;
-        if (! $current || ($current->expires_at && ! $current->expires_at->isFuture()) || ! $current->device_id
-            || ! Device::whereKey($current->device_id)->where('status', 'approved')->lockForUpdate()->first()) {
-            throw new \Illuminate\Auth\AuthenticationException;
-        }
-        if (! $fresh->hasPermissionTo($permission === 'adjust_stock' ? 'adjust_stock' : ($permission === 'approve_variance' ? 'manage_till' : 'sell'))) {
-            throw new \Illuminate\Auth\Access\AuthorizationException;
-        }
-        return $current;
+        // The requester's own session is revalidated by the shared session authority;
+        // approvals require a baseline capability (variance approvals need till management).
+        $baseline = match ($permission) {
+            'adjust_stock' => 'adjust_stock',
+            'approve_variance' => 'manage_till',
+            default => 'sell',
+        };
+        return app(FinancialActorService::class)->lock($original, $baseline)->currentAccessToken();
     }
 
     private function eligible(User $user, string $permission): bool

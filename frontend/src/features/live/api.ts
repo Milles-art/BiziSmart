@@ -5,11 +5,12 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
 
 export interface PaymentCapabilities { provider: 'selcom'; configured: boolean; enabled: boolean; reason: 'merchant_setup_required' | 'ready' }
-export interface Till { id: string; branch_id: string; branch_name: string; cashier_id: string; cashier_name: string; status: 'open' | 'closed'; opening_float: number; expected_cash: number; closing_cash: number | null; variance: number | null; revision: number; opened_at: string; closed_at: string | null; approved_by: string | null; owner_review_required: boolean }
+export interface Till { id: string; branch_id: string; branch_name: string; cashier_id: string; cashier_name: string; status: 'open' | 'closed'; opening_float: number; expected_cash: number | null; closing_cash: number | null; variance: number | null; revision: number; opened_at: string; closed_at: string | null; approved_by: string | null; owner_review_required: boolean }
 export interface TillResult { till: Till; replayed: boolean; entry_id?: string }
 export interface TillCloseInput { operation_id: string; till_id: string; counted_cash: number }
-export interface TillReview { expected_cash: number; counted_cash: number; variance: number; variance_limit: number; approval_required: boolean; payload_hash: string; snapshot: TillCloseInput & { branch_id: string; expected_cash: number; revision: number; variance_limit: number } }
-export type TillCloseCommit = TillCloseInput & { expected_cash: number; revision: number; variance_limit: number; approval_token?: string };
+export interface TillCloseChallenge { operation_id: string; till_id: string; counted_cash: number; payload_hash: string }
+export interface VarianceReview { expected_cash: number; counted_cash: number; variance: number; variance_limit: number }
+export type TillCloseCommit = TillCloseInput & { approval_token?: string };
 
 export type StaffRole = 'owner' | 'manager' | 'cashier' | 'stockkeeper';
 export interface ServerUser { id: string; name: string; role: StaffRole; branch_id: string | null; permissions: string[] }
@@ -18,8 +19,8 @@ export interface Device { id: string; name: string; status: 'pending' | 'approve
 export interface SessionResult { token: string; expires_at: string; user: ServerUser }
 export interface Challenge { challenge_token: string; next_step: 'enroll_totp' | 'verify_totp' | 'change_pin'; expires_at: string; setup_secret?: string }
 export type AuthResult = SessionResult | Challenge;
-export interface ApprovalGrant { approved_by: string; approval_token: string; expires_at: string }
-export interface ApprovalRequest { phone?: string; pin?: string; email?:string; password?:string; permission: 'refund' | 'void' | 'give_discount' | 'approve_variance' | 'adjust_stock' | 'manage_settings'; operation_id: string; payload_hash: string; code?: string }
+export interface ApprovalGrant { approved_by: string; approval_token: string; expires_at: string; review?: VarianceReview }
+export interface ApprovalRequest { phone?: string; pin?: string; email?:string; password?:string; permission: 'refund' | 'void' | 'give_discount' | 'approve_variance' | 'adjust_stock' | 'manage_settings'; operation_id: string; payload_hash: string; code?: string; till_id?: string; counted_cash?: number }
 export interface CatalogueProduct { id: string; name: string; barcode: string | null; category: string | null; quantity_type: 'counted' | 'weight'; unit: string; selling_price: number; buying_price?: number; reorder_level: string; tracks_expiry: boolean; is_active: boolean; stock: string | null; stock_available: boolean; stock_total?: string; nearest_expiry?: string | null; department_id?: string | null; department_name?: string | null; packagings?: Packaging[]; selected_packaging?: Packaging | null; image?: import('./ProductImage').ProductImageMetadata | null }
 export interface ProductInput { department_id?: string | null; name: string; barcode: string | null; category: string | null; quantity_type: 'counted' | 'weight'; unit: string; buying_price: number; selling_price: number; reorder_level: string; tracks_expiry: boolean; is_active: boolean }
 export interface CatalogueFilters { page: number; search?: string; category?: string; barcode?: string; department_id?: string; low_stock?: number; expiring_in?: number }
@@ -114,7 +115,6 @@ export const liveApi = createApi({ reducerPath: 'liveApi', tagTypes: ['MobilePay
     tills: b.query<{ tills: Till[]; meta: { page: number; total: number; owner_review_count: number } }, { page: number; status: 'open' | 'closed' }>({ query: (params) => ({ url: 'till-sessions', params }), providesTags: ['Tills'], transformResponse: (r: { data: { tills: Till[] }; meta: { page: number; total: number; owner_review_count: number } }) => ({ ...r.data, meta: r.meta }) }),
     openTill: b.mutation<TillResult, { operation_id: string; branch_id: string; opening_float: number }>({ query: (body) => ({ url: 'till-sessions/open', method: 'POST', body }), invalidatesTags: ['Tills'], transformResponse: (r: { data: TillResult }) => r.data }),
     paidOut: b.mutation<TillResult, { operation_id: string; till_id: string; amount: number; reason: string }>({ query: (body) => ({ url: 'till-sessions/current/paid-out', method: 'POST', body }), invalidatesTags: ['Tills'], transformResponse: (r: { data: TillResult }) => r.data }),
-    previewTillClose: b.mutation<TillReview, TillCloseInput>({ query: (body) => ({ url: 'till-sessions/current/close/preview', method: 'POST', body }), transformResponse: (r: { data: TillReview }) => r.data }),
     closeTill: b.mutation<TillResult, TillCloseCommit>({ query: (body) => ({ url: 'till-sessions/current/close', method: 'POST', body }), invalidatesTags: ['Tills'], transformResponse: (r: { data: TillResult }) => r.data }),
 
     previewCorrection: b.mutation<CorrectionPreview, CorrectionInput>({ query: (body) => ({ url: 'stock/adjust/preview', method: 'POST', body }), transformResponse: (r: { data: CorrectionPreview }) => r.data }),
@@ -150,7 +150,7 @@ export const liveApi = createApi({ reducerPath: 'liveApi', tagTypes: ['MobilePay
     deviceStatus: b.mutation<unknown, { id: string; action: 'approve' | 'block' }>({ query: ({ id, action }) => ({ url: `devices/${id}/${action}`, method: 'POST' }), invalidatesTags: ['Devices'] }),
   }),
 });
-export const { useMobileCompletionReviewMutation,useLazyProductQuery,useLazyCustomerQuery,usePreviewManualRefundMutation,useRecordManualRefundMutation,useMobilePaymentsQuery,useOwnerPaymentsQuery,useMobilePaymentQuery,useBeginMobilePaymentMutation,useCompleteMobilePaymentMutation, useCompleteMobileCollectionMutation,usePaymentCapabilitiesQuery, useLazyReturnReceiptQuery, usePreviewReturnMutation, useCompleteReturnMutation, useCustomersQuery, useSaveCustomerMutation, useCustomerDebtQuery, usePreviewCollectionMutation, useCollectDebtMutation, usePreviewSaleMutation, useCompleteSaleMutation, useReorderAlertsQuery, useExpiryAlertsQuery, useCurrentTillQuery, useTillsQuery, useOpenTillMutation, usePaidOutMutation, usePreviewTillCloseMutation, useCloseTillMutation, useLoginMutation, useSetupOwnerMutation, useVerifyCodeMutation, useChangePinMutation, useSupervisorCheckMutation, useLogoutMutation,
+export const { useMobileCompletionReviewMutation,useLazyProductQuery,useLazyCustomerQuery,usePreviewManualRefundMutation,useRecordManualRefundMutation,useMobilePaymentsQuery,useOwnerPaymentsQuery,useMobilePaymentQuery,useBeginMobilePaymentMutation,useCompleteMobilePaymentMutation, useCompleteMobileCollectionMutation,usePaymentCapabilitiesQuery, useLazyReturnReceiptQuery, usePreviewReturnMutation, useCompleteReturnMutation, useCustomersQuery, useSaveCustomerMutation, useCustomerDebtQuery, usePreviewCollectionMutation, useCollectDebtMutation, usePreviewSaleMutation, useCompleteSaleMutation, useReorderAlertsQuery, useExpiryAlertsQuery, useCurrentTillQuery, useTillsQuery, useOpenTillMutation, usePaidOutMutation, useCloseTillMutation, useLoginMutation, useSetupOwnerMutation, useVerifyCodeMutation, useChangePinMutation, useSupervisorCheckMutation, useLogoutMutation,
   useMeQuery, useUsersQuery, useCreateUserMutation, useUpdateUserMutation, useDeactivateUserMutation, useResetPinMutation,
   useDevicesQuery, useDeviceStatusMutation, useProductsQuery, useCreateProductMutation, useUpdateProductMutation, useArchiveProductMutation,
   usePackagingsQuery, useCreatePackagingMutation, useUpdatePackagingMutation, useArchivePackagingMutation,

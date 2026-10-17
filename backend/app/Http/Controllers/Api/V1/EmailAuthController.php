@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Requests\Auth\EmailAuthRequest;
 use App\Http\Responses\ApiResponse;
 use App\Services\EmailAuthService;
+use App\Services\ShopRegistrationService;
 use Illuminate\Http\JsonResponse;
 
 class EmailAuthController
@@ -24,6 +25,16 @@ class EmailAuthController
     {
         $this->auth->forgot($request->validated('email'));
         return ApiResponse::success(['message' => 'If this address can receive a password reset, a link will be sent.']);
+    }
+    public function registerStatus(): JsonResponse
+    {
+        return ApiResponse::success($this->auth->registrationAvailable(request()->getHost()));
+    }
+    public function register(EmailAuthRequest $request): JsonResponse
+    {
+        $subdomain = app(ShopRegistrationService::class)->subdomainFor($request->getHost());
+        $result = $this->auth->registerShop($request->validated(), $subdomain, $request->ip());
+        return ApiResponse::success($result['data'], $result['status']);
     }
     public function reset(EmailAuthRequest $request): JsonResponse
     {

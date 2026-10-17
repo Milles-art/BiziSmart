@@ -1,6 +1,6 @@
 # F01 — Email/password authentication (D109)
 
-The user selected email/password without an authenticator for shop users and platform administrators. This supersedes earlier mandatory MFA for email-enrolled accounts. Preserve tenant isolation, active-account/device approval, permissions, per-operation grants and session expiry. No public shop creation or open staff registration.
+The user selected email/password without an authenticator for shop users and platform administrators. This supersedes earlier mandatory MFA for email-enrolled accounts. Preserve tenant isolation, active-account/device approval, permissions, per-operation grants and session expiry. Staff accounts stay owner-created; only a shop's owner may self-register (D115).
 
 ## Flows and rules
 
@@ -26,6 +26,16 @@ Existing JSON envelope, no-store/private and no-referrer; tenant from trusted sh
 - POST `/auth/email/activation-link`: authenticated owner; user_id → setup_url/expires_at. Only active tenant-owned unenrolled targets qualify. Link stays transient and mutation cache is cleared.
 - POST `/auth/supervisor-check` additionally accepts email/password with permission,operation_id,payload_hash. Email-enrolled approvers need no code; preserve branch eligibility, exact snapshot/requester/token/device binding, five-minute expiry and single use. Wrong supervisor credentials must not sign the cashier out.
 
+## Public shop registration (D115)
+
+An unclaimed shop address registers its own shop and owner; staff remain owner-created.
+
+- `GET /auth/email/register/status` → `{available}`. A shop address is available only while no business has ever used it, including a deactivated one. Any valid non-reserved shop host may answer; the reserved `admin`, `api` and `www` hosts and non-shop hosts return404 like every other unknown host.
+- `POST /auth/email/register`: `shop_name,name,phone,email,password,password_confirmation,device_uid,device_name` → the existing200 session token/user. The tenant comes from the request host alone; `subdomain` and `business_id` in the body are rejected as422 VALIDATION_ERROR. A taken or previously used address returns409 SHOP_ALREADY_EXISTS and changes nothing.
+- One transaction creates the business (cheapest configured plan, active, default variance limit), provisions the approved roles, creates the Main Branch, then the single owner with role `owner`, an unusable random PIN and no TOTP history. Credentials are assigned through the same path as every other enrollment, then the ordinary email login issues that owner's first session, so the registering device is the approved first device.
+- Password, email, phone and device validation equal the login/setup rules; five registrations per minute per caller and thirty availability reads. The same address is never registrable twice, a shop can never be created inside another shop's tenant, and no registration path reuses or resets an operational owner.
+- The shipped UI shows "Create your shop account" only while this host reports availability; a taken address shows the normal sign-in screen unchanged.
+
 Private fragments #setup/#activate/#reset are removed from the address bar and remain only in component memory. Do not persist emails/passwords/challenges. Existing approved-sessionStorage/device rules remain.
 
 ## Storage and migration
@@ -36,4 +46,4 @@ Legacy PIN/TOTP endpoints serve only unmigrated accounts during explicit activat
 
 ## Acceptance
 
-Test invite/activation/reset expiry and replay, cross-shop lookup, email collisions, bad/locked credentials, pending/blocked devices, mail unavailable/failure, session/grant/lease revocation, admin limits/session/reset, email-only owner tills/sales/stock/approvals and reload behavior. Run guarded backend/browser suites sequentially. Production delivery, real-user activation and physical hardware are independent acceptance gates.
+Test invite/activation/reset expiry and replay, cross-shop lookup, email collisions, bad/locked credentials, pending/blocked devices, mail unavailable/failure, session/grant/lease revocation, admin limits/session/reset, email-only owner tills/sales/stock/approvals and reload behavior, plus shop registration: host-derived tenant, rejected body tenant identifiers, taken/never-reusable addresses, hidden routes on an unregistered host, availability reporting, validation parity and cross-shop isolation. Run guarded backend/browser suites sequentially. Production delivery, real-user activation and physical hardware are independent acceptance gates.

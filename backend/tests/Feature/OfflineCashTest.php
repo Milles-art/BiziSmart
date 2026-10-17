@@ -54,7 +54,7 @@ it('commits exact gram cash stock and till journals once and rejects changed dup
     offlineSync($this,[...$body,'cash_tendered'=>50000])->assertConflict()->assertJsonPath('error.code','OPERATION_ID_REUSED');
     $this->context->run($this->alpha,function()use($body){
         expect(Sale::count())->toBe(1);expect(OfflineOperation::count())->toBe(1);expect(StockMovement::where('type','sale')->count())->toBe(1);expect(SaleItem::first()->qty_atoms)->toBe(750);expect(SaleItem::first()->cost_price)->toBe(6000);
-        expect(ProductBatch::first()->qty_remaining_atoms)->toBe(1250);expect(TillCashEntry::where('type','cash_sale')->sum('amount'))->toBe('7500');expect(app(TillService::class)->current($this->alphaCashier)['till']['expected_cash'])->toBe(27500);
+        expect(ProductBatch::first()->qty_remaining_atoms)->toBe(1250);expect(TillCashEntry::where('type','cash_sale')->sum('amount'))->toBe('7500');expect(app(TillService::class)->view((new TillSession)->resolveRouteBinding($this->alphaTill['id']))['expected_cash'])->toBe(27500);
         expect(Sale::first()->is_offline)->toBeTrue();expect(Sale::first()->occurred_at->getTimestampMs())->toBe(\Carbon\CarbonImmutable::parse($body['captured_at'])->startOfSecond()->getTimestampMs());
     });
 });
@@ -93,8 +93,7 @@ it('records an expired-lease sale only as quarantine and makes exact replay harm
 it('requires owner approval to reconcile closed-till cash into an own open till preserving original attribution',function(){
     $body=offlineBody($this);
     $close=['operation_id'=>(string)Str::uuid(),'till_id'=>$this->alphaTill['id'],'counted_cash'=>20000];
-    $snapshot=$this->withToken($this->alphaCashierToken)->postJson('http://alpha.bizismart.test/api/v1/till-sessions/current/close/preview',$close)->assertOk()->json('data.snapshot');
-    $this->postJson('http://alpha.bizismart.test/api/v1/till-sessions/current/close',$snapshot)->assertCreated();
+    $this->withToken($this->alphaCashierToken)->postJson('http://alpha.bizismart.test/api/v1/till-sessions/current/close',$close)->assertCreated();
     $old=$this->context->run($this->alpha,fn()=>(new TillSession)->resolveRouteBinding($this->alphaTill['id'])->getAttributes());
     $quarantine=offlineSync($this,$body)->assertCreated()->assertJsonPath('data.status','quarantined')->json('data');expect($quarantine['conflicts'])->toContain('TILL_CLOSED');
     $ownerTill=$this->context->run($this->alpha,fn()=>app(TillService::class)->open($this->alphaOwner,['operation_id'=>(string)Str::uuid(),'branch_id'=>$this->alphaBranch->publicId(),'opening_float'=>0])['till']);

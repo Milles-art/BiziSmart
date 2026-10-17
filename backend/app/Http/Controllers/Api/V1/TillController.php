@@ -14,7 +14,6 @@ class TillController {
     }
     public function open(TillOperationRequest $r) { return $this->respond($this->tills->open($r->user(),$r->validated())); }
     public function paidOut(TillOperationRequest $r) { return $this->respond($this->tills->paidOut($r->user(),$r->validated())); }
-    public function preview(TillOperationRequest $r) { return ApiResponse::success($this->tills->preview($r->user(),$r->validated())); }
     public function close(TillOperationRequest $r) { return $this->respond($this->tills->close($r->user(),$r->validated())); }
     private function respond(array $result) { return ApiResponse::success($result,$result['replayed'] ? 200 : 201); }
 }

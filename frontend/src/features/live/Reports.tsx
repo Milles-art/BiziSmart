@@ -3,7 +3,7 @@ import { Activity, ArrowDownToLine, BarChart3, Banknote, CalendarDays, ChevronRi
 import { SectionCard, StatCard, SummaryCard } from '../../components/ui/Primitives';
 import { downloadReportCsv as download } from './reportCsv';
 import { LossReportPanels } from './LossReportPanels';
-import { errorMessage } from './api';
+import { errorMessage, type ServerUser } from './api';
 import { useReportSummaryQuery, useReportSalesQuery, useReportStockQuery } from './financeApi';
 import { Expenses } from './Expenses';
 import { useLanguage, translate as t } from '../../i18n';
@@ -23,15 +23,28 @@ const money = (n: number) => n === undefined ? '—' : `TSh ${n.toLocaleString('
 const input = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100';
 const secondary = 'inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40';
 function today() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Dar_es_Salaam', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
+const eastAfricaNow = () => new Date(Date.now() + 3 * 3600000);
+const ymd = (date: Date) => date.toISOString().slice(0, 10);
+function datePresets() {
+  const now = eastAfricaNow();
+  const day = (offset: number) => ymd(new Date(now.getTime() - offset * 86400000));
+  return [
+    { id: 'today', label: 'Today', from: day(0), to: day(0) },
+    { id: 'yesterday', label: 'Yesterday', from: day(1), to: day(1) },
+    { id: 'week', label: 'Last 7 days', from: day(6), to: day(0) },
+    { id: 'month', label: 'This month', from: ymd(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))), to: day(0) },
+  ] as const;
+}
 
-export function Reports() {
+export function Reports({ actor }: { actor: ServerUser }) {
   useLanguage();
+  const reportAccess = actor.role === 'owner' && actor.permissions.includes('view_reports');
   const [tab, setTab] = useState<ReportId>('summary');
   const [from, setFrom] = useState(today); const [to, setTo] = useState(today);
   const [filters, setFilters] = useState({ from: today(), to: today(), page: 1 });
-  const summary = useReportSummaryQuery(filters, { skip: tab !== 'summary', refetchOnMountOrArgChange: true });
-  const sales = useReportSalesQuery(filters, { skip: tab !== 'sales', refetchOnMountOrArgChange: true });
-  const stock = useReportStockQuery(filters, { skip: tab !== 'stock', refetchOnMountOrArgChange: true });
+  const summary = useReportSummaryQuery(filters, { skip: !reportAccess || tab !== 'summary', refetchOnMountOrArgChange: true });
+  const sales = useReportSalesQuery(filters, { skip: !reportAccess || tab !== 'sales', refetchOnMountOrArgChange: true });
+  const stock = useReportStockQuery(filters, { skip: !reportAccess || tab !== 'stock', refetchOnMountOrArgChange: true });
   const active = tab === 'sales' ? sales : tab === 'stock' ? stock : summary;
   const directReport = ['summary', 'sales', 'stock'].includes(tab);
   const selected = reports.find(report => report.id === tab)!;
@@ -41,6 +54,12 @@ export function Reports() {
     if (directReport && filters.from === from && filters.to === to && filters.page === 1 && !active.isUninitialized) void active.refetch();
     setFilters({ from, to, page: 1 });
   }
+  function applyPreset(id: string) {
+    const preset = datePresets().find(option => option.id === id);
+    if (!preset) return;
+    setFrom(preset.from); setTo(preset.to); setFilters({ from: preset.from, to: preset.to, page: 1 });
+  }
+  if (!reportAccess) return <div className="p-4 lg:p-6"><SectionCard title={t('Reports')}><div className="flex flex-col items-center p-10 text-center"><p className="max-w-lg text-sm text-slate-500">{t('Financial reports are available to the owner.')}</p></div></SectionCard></div>;
   return <div className="p-4 lg:p-6">
     <div className="mb-4 lg:hidden"><label className="block text-xs font-medium text-slate-500">{t('Choose report')}<select value={tab} onChange={event => setTab(event.target.value as ReportId)} className={input + ' mt-1 font-medium'}>{['Business performance', 'Cash & controls'].map(group => <optgroup key={group} label={t(group)}>{reports.filter(report => report.group === group).map(report => <option key={report.id} value={report.id}>{t(report.label)}</option>)}</optgroup>)}</select></label></div>
     <div className="grid items-start gap-5 lg:grid-cols-[208px_minmax(0,1fr)] xl:grid-cols-[224px_minmax(0,1fr)]">
@@ -50,7 +69,7 @@ export function Reports() {
       <div className="min-w-0 space-y-4">
         <div className="flex items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><SelectedIcon className="h-5 w-5" /></div><div><h2 className="text-lg font-bold text-slate-800">{t(selected.label)}</h2>{!['alerts', 'expenses'].includes(tab) && <p className="mt-0.5 text-xs text-slate-500">{filters.from} — {filters.to}</p>}</div></div>
         {tab === 'expenses' ? <Expenses /> : <>
-          {tab !== 'alerts' && <div className="rounded-xl border border-slate-200 bg-white p-4"><form onSubmit={runReport} className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"><label className="text-xs font-medium text-slate-500">{t('From')}<input type="date" required value={from} onChange={event => setFrom(event.target.value)} className={input + ' mt-1 min-w-0'} /></label><label className="text-xs font-medium text-slate-500">{t('To')}<input type="date" required value={to} onChange={event => setTo(event.target.value)} className={input + ' mt-1 min-w-0'} /></label><button className="col-span-2 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 sm:col-span-1 text-sm font-semibold text-white hover:bg-emerald-600"><CalendarDays className="h-4 w-4" />{t('Run report')}</button></form><p className="mt-3 text-xs leading-relaxed text-slate-400">{t('Dates use Tanzania time. Sales, refunds and expenses keep their own event dates. Stock valuation shows the current recorded balances.')}</p></div>}
+          {tab !== 'alerts' && <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="mb-3 flex flex-wrap gap-2" role="group" aria-label={t('Quick date ranges')}>{datePresets().map(preset => <button key={preset.id} type="button" aria-pressed={filters.from === preset.from && filters.to === preset.to} onClick={() => applyPreset(preset.id)} className={'min-h-11 rounded-lg border px-3 py-2 text-xs font-semibold ' + (filters.from === preset.from && filters.to === preset.to ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600')}>{t(preset.label)}</button>)}</div><form onSubmit={runReport} className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"><label className="text-xs font-medium text-slate-500">{t('From')}<input type="date" required value={from} onChange={event => setFrom(event.target.value)} className={input + ' mt-1 min-w-0'} /></label><label className="text-xs font-medium text-slate-500">{t('To')}<input type="date" required value={to} onChange={event => setTo(event.target.value)} className={input + ' mt-1 min-w-0'} /></label><button className="col-span-2 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 sm:col-span-1 text-sm font-semibold text-white hover:bg-emerald-600"><CalendarDays className="h-4 w-4" />{t('Run report')}</button></form><p className="mt-3 text-xs leading-relaxed text-slate-400">{t('Dates use Tanzania time. Sales, refunds and expenses keep their own event dates. Stock valuation shows the current recorded balances.')}</p></div>}
           {directReport && active.isFetching && <p role="status" className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-500">{t('Loading report…')}</p>}
           {directReport && active.error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{errorMessage(active.error)} <button onClick={() => void active.refetch()} className="font-medium underline">{t('Try again')}</button></div>}
           {['departments', 'tills', 'losses', 'alerts'].includes(tab) && <LossReportPanels key={tab + filters.from + filters.to} tab={tab} filters={filters} />}

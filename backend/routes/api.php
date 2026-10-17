@@ -16,6 +16,8 @@ Route::middleware('auth.no_store')->group(function () {
     Route::post('/auth/email/forgot-password', [$emailAuth, 'forgot'])->middleware('throttle:staff-login');
     Route::post('/auth/email/reset-password', [$emailAuth, 'reset'])->middleware('throttle:auth-step');
     Route::post('/auth/email/activate', [$emailAuth, 'activate'])->middleware('throttle:auth-step');
+    Route::get('/auth/email/register/status', [$emailAuth, 'registerStatus'])->middleware('throttle:30,1')->name('auth.register.status');
+    Route::post('/auth/email/register', [$emailAuth, 'register'])->middleware('throttle:5,1')->name('auth.register');
     $auth = \App\Http\Controllers\Api\V1\AuthController::class;
     Route::post('/auth/login', [$auth, 'login'])->middleware('throttle:staff-login')->name('auth.login');
     Route::post('/auth/owner/setup', [$auth, 'setup'])->middleware('throttle:auth-step');
@@ -36,7 +38,7 @@ Route::middleware('auth.no_store')->group(function () {
         require __DIR__.'/loss-reporting.php';
         require __DIR__.'/display_loyalty.php';
         require __DIR__.'/messaging.php';
-        Route::get('/subscription-status',function(){ $s=\App\Models\Subscription::first();return \App\Http\Responses\ApiResponse::success(['managed'=>$s!==null,'active'=>!$s||($s->status==='active'&&!$s->starts_at->isFuture()&&$s->ends_at->isFuture()),'status'=>$s?->status,'ends_at'=>$s?->ends_at?->toISOString()]);});
+        Route::get('/subscription-status', [\App\Http\Controllers\Api\V1\SubscriptionController::class, 'status']);
         Route::get('/me', [$auth, 'me']);
         Route::get('/me/features', [$auth, 'features']);
         Route::post('/auth/logout', [$auth, 'logout']);
@@ -66,7 +68,6 @@ Route::middleware('auth.no_store')->group(function () {
             Route::get('/till-sessions/current', [$tills, 'current']);
             Route::post('/till-sessions/open', [$tills, 'open'])->name('tills.open');
             Route::post('/till-sessions/current/paid-out', [$tills, 'paidOut'])->name('tills.paid_out');
-            Route::post('/till-sessions/current/close/preview', [$tills, 'preview'])->name('tills.preview');
             Route::post('/till-sessions/current/close', [$tills, 'close'])->name('tills.close');
         });
         $customers = \App\Http\Controllers\Api\V1\CustomerController::class;

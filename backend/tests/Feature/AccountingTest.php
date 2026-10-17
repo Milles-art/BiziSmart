@@ -71,22 +71,22 @@ it('rejects excess settlement and requires approval for drawer-funded expenses w
  $url=accountingUrl('expenses/'.$e['id'].'/payments');$r=$this->postJson($url.'/preview',$body)->assertOk()->assertJsonPath('data.approval_required',true)->json('data');
  $this->postJson($url,[...$body,'review_hash'=>$r['review_hash']])->assertForbidden()->assertJsonPath('error.code','APPROVAL_REQUIRED');
  $this->postJson($url.'/preview',[...$body,'amount'=>1001])->assertUnprocessable();
- $this->getJson(accountingUrl('till-sessions/current'))->assertOk()->assertJsonPath('data.till.expected_cash',20000);
+ $this->withToken($this->alphaManagerToken)->getJson(accountingUrl('till-sessions'))->assertOk()->assertJsonPath('data.tills.0.expected_cash',20000);
 });
 it('deducts a handover once and blocks closure until the nominated manager acknowledges',function(){
  $this->withToken($this->alphaCashierToken);$t=accountingTill($this);$body=['operation_id'=>(string)Str::uuid(),'till_id'=>$t['id'],'receiver_id'=>$this->alphaManager->publicId(),'amount'=>5000,'reason'=>'Safe handover'];
  $r=$this->postJson(accountingUrl('cash-drops/preview'),$body)->assertOk()->json('data');
  $d=$this->postJson(accountingUrl('cash-drops'),[...$body,'review_hash'=>$r['review_hash']])->assertCreated()->json('data.drop');
  $this->postJson(accountingUrl('cash-drops'),[...$body,'review_hash'=>$r['review_hash']])->assertOk()->assertJsonPath('data.replayed',true);
- $this->getJson(accountingUrl('till-sessions/current'))->assertJsonPath('data.till.expected_cash',15000);
+ $this->withToken($this->alphaManagerToken)->getJson(accountingUrl('till-sessions'))->assertJsonPath('data.tills.0.expected_cash',15000);
  $close=['operation_id'=>(string)Str::uuid(),'till_id'=>$t['id'],'counted_cash'=>15000];
- $this->postJson(accountingUrl('till-sessions/current/close/preview'),$close)->assertConflict();
+ $this->withToken($this->alphaCashierToken)->postJson(accountingUrl('till-sessions/current/close'),$close)->assertConflict();
  $this->withToken($this->alphaManagerToken);$ack=['operation_id'=>(string)Str::uuid()];
  $this->postJson(accountingUrl('cash-drops/'.$d['id'].'/acknowledge'),$ack)->assertOk();
  $other=$this->context->run($this->alpha,fn()=>Branch::create(['name'=>'Other']));
  $this->context->run($this->alpha,function()use($other){$this->alphaManager->branch_id=$other->id;$this->alphaManager->save();});
  $this->postJson(accountingUrl('cash-drops/'.$d['id'].'/acknowledge'),$ack)->assertForbidden();
- $this->withToken($this->alphaCashierToken)->postJson(accountingUrl('till-sessions/current/close/preview'),$close)->assertOk()->assertJsonPath('data.expected_cash',15000);
+ $this->withToken($this->alphaCashierToken)->postJson(accountingUrl('till-sessions/current/close'),$close)->assertCreated()->assertJsonPath('data.till.expected_cash',15000)->assertJsonPath('data.till.variance',0);
  $this->withToken($this->alphaOwnerToken)->getJson(accountingUrl('reports/summary?from=2026-10-13&to=2026-10-13'))->assertOk()->assertJsonPath('data.summary.net_cashflow',0)->assertJsonPath('data.summary.net_profit',0);
 });
 it('fails closed for managers and other tenants on expense and financial report resources',function(){

@@ -24,7 +24,7 @@ it('keeps permissions in a closed native disclosure and retains real staff actio
  expect(card.getByRole('button',{name:'Edit staff'})).toBeTruthy();
  expect(card.getByRole('button',{name:'Deactivate'})).toBeTruthy();
  expect(card.getByRole('button',{name:'Create sign-in link'})).toBeTruthy();
- expect(card.queryByRole('button',{name:'Reset PIN'})).toBeNull();
+ expect(card.getByRole('button',{name:'Reset PIN'})).toBeTruthy();
  fireEvent.click(card.getByRole('button',{name:'Edit staff'}));
  const dialog=within(screen.getByRole('dialog',{name:'Edit Staff Member'}));
  expect(dialog.getByLabelText('Full Name')).toHaveProperty('value','Asha cashier');

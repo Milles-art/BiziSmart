@@ -58,6 +58,7 @@ All amounts are integer TSh. If a rule here conflicts with code, the rule wins; 
 - `variance = counted_cash - expected_cash`.
 - Example: float 20,000; cash sales 150,000; refunds 5,000; counted 164,000 -> expected 165,000, variance **-1,000** (OK).
 - If `abs(variance) > 5,000` (per-business setting) closing requires supervisor approval; owner is notified.
+- **Blind close (D114):** the closing count commits before any expected/variance figure is revealed. On the till endpoints cashiers never see an open till's expected cash (`null` on `/current` and overview rows); the over-limit 403 returns only a `payload_hash`; numbers are shown to the approver only after supervisor authentication, and to the closer in the committed close response. Managers/owners keep their X view; a changed till after approval fails with `INVALID_APPROVAL` and the grant is not consumed. Cash-drop preview is a separate flow that still reports drawer cash to `manage_till` holders.
 - Closed sessions are immutable.
 - D071: managers oversee sessions and approve variances only in their assigned branch; cashiers operate their own assigned-branch till, while owners oversee all tenant branches. An overview does not grant authority to close another cashier's session. Check fresh branch assignments when consuming approvals.
 

@@ -5,11 +5,11 @@ import type { Screen } from '@/types';
 import { Bell,Globe,LogOut,Menu } from 'lucide-react';
 
 const screenTitles: Record<Screen, string> = {
-  dashboard: 'Dashboard', pos: 'Point of Sale', products: 'Products & Pricing',
-  inventory: 'Inventory Management', suppliers: 'Suppliers & Purchasing',
-  tills: 'Tills & Loss Prevention', customers: 'Customers', staff: 'Staff & Roles',
-  reports: 'Reports', settings: 'Settings & Admin',
-  banking: 'Banking & Reconciliation', messaging: 'Messaging', offline: 'Offline Sync',
+  dashboard: 'Dashboard', pos: 'Point of Sale', products: 'Products',
+  inventory: 'Inventory', suppliers: 'Suppliers',
+  tills: 'Tills & Cash', customers: 'Customers', staff: 'Staff',
+  reports: 'Reports', settings: 'Settings',
+  banking: 'Banking', messaging: 'Messaging', offline: 'Offline Sync',
   account: 'My account',
 };
 

@@ -20,12 +20,15 @@ function response(data: unknown, status = 200) { return new Response(JSON.string
 function mount(hash = '') { history.replaceState(null, '', '/' + hash); return render(<Provider store={store}><Login /></Provider>); }
 function input(label: string, value: string) { fireEvent.change(screen.getByLabelText(label, { exact: true }), { target: { value } }); }
 function newPassword() { input('New password', password); input('Confirm password', password); }
+let registrationAvailable = false;
 beforeEach(() => {
   const controller = transferableAbortController(); vi.stubGlobal('AbortController', controller.constructor); vi.stubGlobal('AbortSignal', controller.signal.constructor);
-  localStorage.clear(); sessionStorage.clear(); setLanguage('en'); store = makeStore(); bodies.length = 0;
+  localStorage.clear(); sessionStorage.clear(); setLanguage('en'); store = makeStore(); bodies.length = 0; registrationAvailable = false;
   vi.stubGlobal('fetch', vi.fn(async (request: Request) => {
-    const path = new URL(request.url).pathname; bodies.push({ path, body: await request.json() });
-    if (path.endsWith('/login') || path.endsWith('/setup')) return response({ data: { token: 'session-token', expires_at: new Date(Date.now() + 3600000).toISOString(), user } });
+    const path = new URL(request.url).pathname;
+    bodies.push({ path, body: request.method === 'GET' ? {} : await request.json() });
+    if (path.endsWith('/register/status')) return response({ data: { available: registrationAvailable } });
+    if (path.endsWith('/login') || path.endsWith('/setup') || path.endsWith('/register')) return response({ data: { token: 'session-token', expires_at: new Date(Date.now() + 3600000).toISOString(), user } });
     return response({ data: { completed: true, message: 'Private generic result' } });
   }));
 });
@@ -38,8 +41,9 @@ it('signs in using only email/password, supports visibility, and retains no cred
   fireEvent.click(screen.getByRole('button', { name: 'Hide password' }));
   fireEvent.click(screen.getByRole('button', { name: 'Sign In', exact: true }));
   await waitFor(() => expect(store.getState().session.token).toBe('session-token'));
-  expect(bodies[0]).toMatchObject({ path: '/api/v1/auth/email/login', body: { email: 'owner@example.test', password, device_name: 'Shop browser' } });
-  expect(bodies[0].body.device_uid).toMatch(/^[a-f0-9-]{36}$/);
+  const loginRequest = bodies.find(request => request.path === '/api/v1/auth/email/login');
+  expect(loginRequest).toMatchObject({ path: '/api/v1/auth/email/login', body: { email: 'owner@example.test', password, device_name: 'Shop browser' } });
+  expect(loginRequest?.body.device_uid).toMatch(/^[a-f0-9-]{36}$/);
   await waitFor(() => expect(JSON.stringify(store.getState().liveApi)).not.toContain(password));
   expect(JSON.stringify(localStorage)).not.toContain(password); expect(JSON.stringify(sessionStorage)).not.toContain(password); expect(sessionStorage.length).toBe(0);
 });
@@ -54,7 +58,7 @@ it('consumes an owner invitation in memory and sends an explicit confirmed passw
 });
 it('requests reset with a generic account-neutral result and never treats it as a session', async () => {
   mount(); fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' })); input('Email address', 'unknown@example.test'); fireEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
-  expect((await screen.findByRole('status')).textContent).toContain('If an eligible account'); expect(store.getState().session.token).toBeNull(); expect(bodies[0]).toEqual({ path: '/api/v1/auth/email/forgot-password', body: { email: 'unknown@example.test' } });
+  expect((await screen.findByRole('status')).textContent).toContain('If an eligible account'); expect(store.getState().session.token).toBeNull(); expect(bodies.find(request => request.path === '/api/v1/auth/email/forgot-password')).toEqual({ path: '/api/v1/auth/email/forgot-password', body: { email: 'unknown@example.test' } });
 });
 it('changes password from a private fragment then requires a fresh sign in', async () => {
   mount('#reset=' + token); expect(location.hash).toBe(''); expect(screen.queryByLabelText('Email address')).toBeNull(); newPassword(); fireEvent.click(screen.getByRole('button', { name: 'Save new password' }));
@@ -89,4 +93,32 @@ it('requests bound supervisor approval with email/password and no numeric PIN or
   input('Supervisor email', 'manager@example.test'); input('Supervisor password', password); expect(screen.queryByLabelText(/authenticator/)).toBeNull(); fireEvent.click(screen.getByRole('button', { name: 'Approve discount' }));
   await waitFor(() => expect(approved).toHaveBeenCalledWith('grant'));
   expect(bodies[0].body).toEqual({ email: 'manager@example.test', password, permission: 'give_discount', operation_id: 'operation-one', payload_hash: 'review-one' });
+});
+
+it('offers self-service shop registration on an unclaimed shop address and signs the owner straight in', async () => {
+  registrationAvailable = true; mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Create your shop account' }));
+  expect(screen.getByLabelText('Shop name')).toBeTruthy();
+  input('Shop name', 'Fresh Choice Supermarket'); input('Owner name', 'Neema Mwakalinga');
+  input('Phone number', '0714000001'); input('Email address', 'owner@freshchoice.test'); newPassword();
+  fireEvent.click(screen.getByRole('button', { name: 'Create shop account' }));
+  await waitFor(() => expect(store.getState().session.token).toBe('session-token'));
+  expect(bodies.some(request => request.path === '/api/v1/auth/email/register/status')).toBe(true);
+  const registration = bodies.find(request => request.path === '/api/v1/auth/email/register');
+  expect(registration).toMatchObject({ body: { shop_name: 'Fresh Choice Supermarket', name: 'Neema Mwakalinga', phone: '0714000001', email: 'owner@freshchoice.test', password_confirmation: password } });
+  expect(registration?.body).not.toHaveProperty('subdomain');
+  expect(registration?.body).not.toHaveProperty('business_id');
+  expect(registration?.body).not.toHaveProperty('invitation_token');
+  expect(registration?.body).not.toHaveProperty('pin');
+  expect(JSON.stringify(localStorage)).not.toContain(password); expect(JSON.stringify(sessionStorage)).not.toContain(password);
+});
+
+it('keeps the sign-in screen unchanged when the shop address is already taken', async () => {
+  registrationAvailable = false; mount();
+  await waitFor(() => expect(bodies.some(request => request.path === '/api/v1/auth/email/register/status')).toBe(true));
+  expect(screen.queryByRole('button', { name: 'Create your shop account' })).toBeNull();
+  expect(screen.getByText(/First time here\?/)).toBeTruthy();
+  input('Email address', 'owner@example.test'); input('Password', password);
+  fireEvent.click(screen.getByRole('button', { name: 'Sign In', exact: true }));
+  await waitFor(() => expect(store.getState().session.token).toBe('session-token'));
 });

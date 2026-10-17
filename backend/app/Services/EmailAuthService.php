@@ -16,7 +16,30 @@ use Illuminate\Support\Facades\Mail;
 
 class EmailAuthService
 {
-    public function __construct(private TenantContext $context, private StaffAuthService $sessions, private OwnerSetupService $owners) {}
+    public function __construct(private TenantContext $context, private StaffAuthService $sessions, private OwnerSetupService $owners, private ShopRegistrationService $shops) {}
+
+    /**
+     * Public shop registration (D115): create the host's shop and its owner, then
+     * issue that owner's first session through the ordinary email login path.
+     */
+    public function registerShop(#[\SensitiveParameter] array $input, string $subdomain, ?string $ip): array
+    {
+        $this->assertPassword($input['password'], true);
+        $business = $this->shops->create($input, $subdomain);
+
+        return $this->context->run($business, function () use ($input, $ip) {
+            $owner = User::whereHas('roles', fn ($query) => $query->where('name', 'owner'))->firstOrFail();
+            $this->setCredentials($owner, $input['email'], $input['password']);
+
+            return $this->login($input, $ip);
+        });
+    }
+
+    /** Availability is read-only and never reveals whether another shop exists. */
+    public function registrationAvailable(string $host): array
+    {
+        return ['available' => $this->shops->available($this->shops->subdomainFor($host))];
+    }
 
     public function login(#[\SensitiveParameter] array $input, ?string $ip): array
     {

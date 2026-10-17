@@ -44,9 +44,8 @@ beforeEach(function () {
 afterEach(function(){ $this->context->clear(); $this->travelBack(); TillOperation::flushEventListeners(); TillSession::flushEventListeners(); \Illuminate\Database\Eloquent\Model::clearBootedModels(); });
 function tillUrl(string $path=''):string{return 'http://alpha.bizismart.test/api/v1/till-sessions'.$path;}
 function tillOpen($t,int $float=20000):array{return $t->postJson(tillUrl('/open'),['operation_id'=>(string)Str::uuid(),'branch_id'=>$t->alphaBranch->publicId(),'opening_float'=>$float])->assertCreated()->json('data.till');}
-function tillReview($t,array $till,int $counted):array{return $t->postJson(tillUrl('/current/close/preview'),['operation_id'=>(string)Str::uuid(),'till_id'=>$till['id'],'counted_cash'=>$counted])->assertOk()->json('data');}
-function tillBody(array $r):array{return array_diff_key($r['snapshot'],['branch_id'=>true]);}
-function tillGrant($t,array $r):string{return $t->postJson('http://alpha.bizismart.test/api/v1/auth/supervisor-check',['phone'=>'0700000002','pin'=>'1234','permission'=>'approve_variance','operation_id'=>$r['snapshot']['operation_id'],'payload_hash'=>$r['payload_hash']])->assertOk()->json('data.approval_token');}
+function tillClose(array $till,int $counted):array{return ['operation_id'=>(string)Str::uuid(),'till_id'=>$till['id'],'counted_cash'=>$counted];}
+function tillGrant($t,array $r,string $payloadHash):string{return $t->postJson('http://alpha.bizismart.test/api/v1/auth/supervisor-check',['phone'=>'0700000002','pin'=>'1234','permission'=>'approve_variance','operation_id'=>$r['operation_id'],'payload_hash'=>$payloadHash,'till_id'=>$r['till_id'],'counted_cash'=>$r['counted_cash']])->assertOk()->json('data.approval_token');}
 
 it('opens scoped tills with duplicate safe references',function(){
  $input=['operation_id'=>(string)Str::uuid(),'branch_id'=>$this->alphaBranch->publicId(),'opening_float'=>20000];
@@ -62,40 +61,53 @@ it('limits open tills across branches and releases a closed slot',function(){
  $other=$this->context->run($this->alpha,fn()=>Branch::create(['name'=>'Other']));$this->context->run($this->alpha,function()use($other){$this->alphaManager->branch_id=$other->id;$this->alphaManager->save();});
  $input=['operation_id'=>(string)Str::uuid(),'branch_id'=>$other->publicId(),'opening_float'=>0];
  $this->withToken($this->alphaManagerToken)->postJson(tillUrl('/open'),$input)->assertForbidden()->assertJsonPath('error.code','PLAN_LIMIT_REACHED');
- $this->withToken($this->alphaCashierToken);$review=tillReview($this,$first,20000);$this->postJson(tillUrl('/current/close'),tillBody($review))->assertCreated();
+ $this->withToken($this->alphaCashierToken);$body=tillClose($first,20000);$this->postJson(tillUrl('/current/close'),$body)->assertCreated();
  $this->withToken($this->alphaManagerToken)->postJson(tillUrl('/open'),$input)->assertCreated();
 });
 it('reconciles authoritative cash and protects closed sessions',function(){
  $till=tillOpen($this);$this->context->run($this->alpha,function(){DB::transaction(function(){ $t=TillSession::firstOrFail();$s=app(TillService::class);$s->recordCash($this->alphaCashier,$t,'cash_sale',150000,(string)Str::uuid());$s->recordCash($this->alphaCashier,$t,'cash_refund',5000,(string)Str::uuid());});});
- $r=tillReview($this,$till,164000);expect($r['expected_cash'])->toBe(165000);expect($r['variance'])->toBe(-1000);expect($r['approval_required'])->toBeFalse();
- $body=tillBody($r);$this->postJson(tillUrl('/current/close'),$body)->assertCreated()->assertJsonPath('data.till.status','closed');$this->postJson(tillUrl('/current/close'),$body)->assertOk()->assertJsonPath('data.replayed',true);
+ $this->getJson(tillUrl('/current'))->assertJsonPath('data.till.expected_cash',null);
+ $this->withToken($this->alphaManagerToken)->getJson(tillUrl())->assertJsonPath('data.tills.0.expected_cash',165000);
+ $this->withToken($this->alphaOwnerToken)->getJson(tillUrl())->assertJsonPath('data.tills.0.expected_cash',165000);
+ $this->withToken($this->alphaCashierToken);
+ $body=tillClose($till,164000);$this->postJson(tillUrl('/current/close'),$body)->assertCreated()->assertJsonPath('data.till.expected_cash',165000)->assertJsonPath('data.till.variance',-1000)->assertJsonPath('data.till.status','closed');
+ $this->postJson(tillUrl('/current/close'),$body)->assertOk()->assertJsonPath('data.replayed',true);
  $this->getJson(tillUrl('/current'))->assertJsonPath('data.till',null);
  $this->postJson(tillUrl('/current/paid-out'),['operation_id'=>(string)Str::uuid(),'till_id'=>$till['id'],'amount'=>1,'reason'=>'Transport'])->assertConflict()->assertJsonPath('error.code','TILL_CLOSED');
  $this->context->run($this->alpha,function(){expect(fn()=>TillSession::firstOrFail()->update(['opening_float'=>1]))->toThrow(LogicException::class);expect(fn()=>DB::transaction(fn()=>app(TillService::class)->recordCash($this->alphaCashier,TillSession::firstOrFail(),'cash_sale',1,(string)Str::uuid())))->toThrow(\App\Exceptions\ApiException::class);});
 });
 it('requires bound variance approval and replays safely after opening another till',function(){
- $t=tillOpen($this);$r=tillReview($this,$t,0);$body=tillBody($r);$this->postJson(tillUrl('/current/close'),$body)->assertForbidden()->assertJsonPath('error.code','SUPERVISOR_REQUIRED');
- $grant=tillGrant($this,$r);$this->postJson(tillUrl('/current/close'),[...$body,'approval_token'=>$grant])->assertCreated()->assertJsonPath('data.till.approved_by',$this->alphaManager->publicId())->assertJsonPath('data.till.owner_review_required',true);
+ $t=tillOpen($this);$body=tillClose($t,0);
+ $denied=$this->postJson(tillUrl('/current/close'),$body)->assertForbidden()->assertJsonPath('error.code','SUPERVISOR_REQUIRED')->assertJsonPath('error.field','approval_token');
+ expect($denied->json('error.details'))->toBe(['permission'=>'approve_variance','payload_hash'=>$denied->json('error.details.payload_hash')]);
+ $check=$this->postJson('http://alpha.bizismart.test/api/v1/auth/supervisor-check',['phone'=>'0700000002','pin'=>'1234','permission'=>'approve_variance','operation_id'=>$body['operation_id'],'payload_hash'=>$denied->json('error.details.payload_hash'),'till_id'=>$t['id'],'counted_cash'=>0])->assertOk();
+ expect($check->json('data.review'))->toBe(['counted_cash'=>0,'expected_cash'=>20000,'variance'=>-20000,'variance_limit'=>5000]);
+ $grant=$check->json('data.approval_token');
+ $this->postJson(tillUrl('/current/close'),[...$body,'approval_token'=>$grant])->assertCreated()->assertJsonPath('data.till.approved_by',$this->alphaManager->publicId())->assertJsonPath('data.till.owner_review_required',true);
  $new=tillOpen($this,100);$this->postJson(tillUrl('/current/close'),[...$body,'approval_token'=>$grant])->assertOk()->assertJsonPath('data.till.id',$t['id']);$this->getJson(tillUrl('/current'))->assertJsonPath('data.till.id',$new['id']);
 });
 it('encrypts paid out reasons deduplicates entries and rejects stale cash reviews',function(){
- $t=tillOpen($this);$r=tillReview($this,$t,0);$grant=tillGrant($this,$r);$paid=['operation_id'=>(string)Str::uuid(),'till_id'=>$t['id'],'amount'=>2000,'reason'=>'Private transport reason'];
- $this->postJson(tillUrl('/current/paid-out'),$paid)->assertCreated()->assertJsonPath('data.till.expected_cash',18000);$this->postJson(tillUrl('/current/paid-out'),$paid)->assertOk()->assertJsonPath('data.replayed',true);
- $this->postJson(tillUrl('/current/close'),[...tillBody($r),'approval_token'=>$grant])->assertConflict()->assertJsonPath('error.code','TILL_CHANGED');
+ $t=tillOpen($this);$body=tillClose($t,0);
+ $denied=$this->postJson(tillUrl('/current/close'),$body)->assertForbidden()->assertJsonPath('error.code','SUPERVISOR_REQUIRED');
+ $grant=tillGrant($this,$body,$denied->json('error.details.payload_hash'));
+ $paid=['operation_id'=>(string)Str::uuid(),'till_id'=>$t['id'],'amount'=>2000,'reason'=>'Private transport reason'];
+ $this->postJson(tillUrl('/current/paid-out'),$paid)->assertCreated()->assertJsonPath('data.till.expected_cash',null)->assertJsonPath('data.till.opening_float',20000);$this->postJson(tillUrl('/current/paid-out'),$paid)->assertOk()->assertJsonPath('data.replayed',true);
+ $this->postJson(tillUrl('/current/close'),[...$body,'approval_token'=>$grant])->assertForbidden()->assertJsonPath('error.code','INVALID_APPROVAL');
  $this->context->run($this->alpha,function(){expect(TillCashEntry::count())->toBe(1);expect(TillCashEntry::firstOrFail()->getRawOriginal('reason'))->not->toContain('Private transport reason');expect(SupervisorApproval::firstOrFail()->consumed_at)->toBeNull();expect(Activity::where('event','till_paid_out')->firstOrFail()->properties->toJson())->not->toContain('Private transport reason');});
 });
 it('enforces till role branch and tenant boundaries and validates integer cash',function(){
  $t=tillOpen($this);$this->withToken($this->alphaStockkeeperToken)->getJson(tillUrl())->assertForbidden();$body=['operation_id'=>(string)Str::uuid(),'till_id'=>$t['id'],'counted_cash'=>1];
- $this->withToken($this->betaCashierToken)->postJson(str_replace('alpha.','beta.',tillUrl('/current/close/preview')),$body)->assertNotFound();
- $this->withToken($this->alphaManagerToken)->postJson(tillUrl('/current/close/preview'),$body)->assertForbidden();$this->getJson(tillUrl())->assertJsonPath('meta.total',1);
+ $this->withToken($this->betaCashierToken)->postJson(str_replace('alpha.','beta.',tillUrl('/current/close')),$body)->assertNotFound();
+ $this->withToken($this->alphaManagerToken)->postJson(tillUrl('/current/close'),$body)->assertForbidden();$this->getJson(tillUrl())->assertJsonPath('meta.total',1);
  $other=$this->context->run($this->alpha,fn()=>Branch::create(['name'=>'Other']));$this->context->run($this->alpha,function()use($other){$this->alphaManager->branch_id=$other->id;$this->alphaManager->save();});$this->getJson(tillUrl())->assertJsonPath('meta.total',0);
  $this->withToken($this->alphaOwnerToken)->getJson(tillUrl())->assertJsonPath('meta.total',1);$this->withToken($this->alphaCashierToken);
  foreach([1.1,'20000',-1,9007199254740992]as$bad){$this->postJson(tillUrl('/open'),['operation_id'=>(string)Str::uuid(),'branch_id'=>$this->alphaBranch->publicId(),'opening_float'=>$bad])->assertUnprocessable();}
- $this->postJson(tillUrl('/current/close/preview'),[...$body,'business_id'=>$this->alpha->id])->assertUnprocessable();$this->context->run($this->alpha,fn()=>$this->alphaDevice->update(['status'=>'blocked']));$this->getJson(tillUrl('/current'))->assertUnauthorized();
+ $this->postJson(tillUrl('/current/close'),[...$body,'business_id'=>$this->alpha->id])->assertUnprocessable();$this->context->run($this->alpha,fn()=>$this->alphaDevice->update(['status'=>'blocked']));$this->getJson(tillUrl('/current'))->assertUnauthorized();
 });
 it('rolls back a close and its consumed grant on journal failure',function(){
- $t=tillOpen($this);$r=tillReview($this,$t,0);$grant=tillGrant($this,$r);\Illuminate\Support\Facades\Event::listen('eloquent.creating: App\\Models\\TillOperation',fn()=>throw new RuntimeException('Injected operation failure'));
- $this->postJson(tillUrl('/current/close'),[...tillBody($r),'approval_token'=>$grant])->assertStatus(500);$this->context->run($this->alpha,function(){expect(TillSession::firstOrFail()->status)->toBe('open');expect(SupervisorApproval::firstOrFail()->consumed_at)->toBeNull();expect(Activity::where('event','till_closed')->count())->toBe(0);});
+ $t=tillOpen($this);$body=tillClose($t,0);$denied=$this->postJson(tillUrl('/current/close'),$body)->assertForbidden();$grant=tillGrant($this,$body,$denied->json('error.details.payload_hash'));
+ \Illuminate\Support\Facades\Event::listen('eloquent.creating: App\\Models\\TillOperation',fn()=>throw new RuntimeException('Injected operation failure'));
+ $this->postJson(tillUrl('/current/close'),[...$body,'approval_token'=>$grant])->assertStatus(500);$this->context->run($this->alpha,function(){expect(TillSession::firstOrFail()->status)->toBe('open');expect(SupervisorApproval::firstOrFail()->consumed_at)->toBeNull();expect(Activity::where('event','till_closed')->count())->toBe(0);});
 });
 
 it('rolls back overflowing cash entries and keeps paid outs separate from drops',function(){
@@ -113,7 +125,7 @@ it('serializes independent MySQL plan capacity and identical opening retries',fu
  $a=(int)explode('|',$this->alphaCashierToken)[0];$b=(int)explode('|',$this->alphaManagerToken)[0];DB::commit();\Illuminate\Foundation\Testing\RefreshDatabaseState::$migrated=false;
  $r=\Illuminate\Support\Facades\Concurrency::driver('process')->run([tillOpenWorker($this->alpha->id,$this->alphaCashier->id,$a,$first),tillOpenWorker($this->alpha->id,$this->alphaManager->id,$b,$second)]);
  expect(array_column($r,'error'))->toBe(['PLAN_LIMIT_REACHED']);
- $this->context->run($this->alpha,function()use($a,$b){expect(TillSession::where('status','open')->count())->toBe(1);$t=TillSession::firstOrFail();$user=User::findOrFail($t->cashier_id)->withAccessToken(\App\Models\PersonalAccessToken::findOrFail($t->cashier_id===$this->alphaCashier->id?$a:$b));$review=app(TillService::class)->preview($user,['operation_id'=>(string)Str::uuid(),'till_id'=>$t->publicId(),'counted_cash'=>0]);app(TillService::class)->close($user,tillBody($review));});
+ $this->context->run($this->alpha,function()use($a,$b){expect(TillSession::where('status','open')->count())->toBe(1);$t=TillSession::firstOrFail();$user=User::findOrFail($t->cashier_id)->withAccessToken(\App\Models\PersonalAccessToken::findOrFail($t->cashier_id===$this->alphaCashier->id?$a:$b));$review=app(TillService::class)->closeReview($user,['operation_id'=>(string)Str::uuid(),'till_id'=>$t->publicId(),'counted_cash'=>0]);app(TillService::class)->close($user,$review['snapshot']);});
  $input=[...$first,'operation_id'=>(string)Str::uuid()];$duplicates=\Illuminate\Support\Facades\Concurrency::driver('process')->run([tillOpenWorker($this->alpha->id,$this->alphaCashier->id,$a,$input),tillOpenWorker($this->alpha->id,$this->alphaCashier->id,$a,$input)]);
  expect($duplicates[0]['till']['id'])->toBe($duplicates[1]['till']['id']);expect(array_column($duplicates,'replayed'))->toContain(true,false);
 });
