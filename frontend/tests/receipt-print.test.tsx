@@ -32,6 +32,16 @@ describe('saved receipt output', () => {
     expect(document.body.textContent).toContain(sale.lines[0].name);
     expect(document.body.textContent).toContain('<img src=x onerror=alert(1)>');
   });
+  it('prints configured text safely at the selected width without changing saved amounts',()=>{
+    const profile={name:'Configured shop',address:'Real address',phone:'0712345678',tin:'123',vrn:null,header:'<script>header</script>',footer:'Come again',paper_width:'58' as const};
+    const document=new DOMParser().parseFromString(receiptHtml(sale,'Old shop','en',profile),'text/html');
+    expect(document.querySelector('script')).toBeNull();
+    expect(document.body.textContent).toContain('Configured shop');
+    expect(document.body.textContent).toContain('TIN: 123');
+    expect(document.body.textContent).toContain('Come again');
+    expect(document.body.textContent).toContain('TSh 8,500');
+    expect(document.querySelector('style')?.textContent).toContain('max-width:50mm');
+  });
   it('distinguishes the manual line discount from the saved allocated cart share', () => {
     const rows = receiptRows({ ...sale, lines: [{ ...sale.lines[0], line_discount: 500, cart_discount: 250, discount: 750 }] }, 'Fresh Choice');
     expect(rows).toContain('Line discount: TSh 500');

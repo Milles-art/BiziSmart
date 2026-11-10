@@ -85,9 +85,18 @@ it('requires an explicit confirmation before acknowledging received cash', async
   await waitFor(() => expect(writes).toEqual(['/api/v1/cash-drops/drop_one/acknowledge']));
 });
 
+it('hides legacy PIN reset for email accounts and shows their password-reset guidance', async () => {
+  const staff = [{ id: 'usr_email', name: 'Email Cashier', email: 'cashier@shop.test', phone: '255620000001', role: 'cashier', is_active: true, email_login_enabled: true, permissions: ['sell'] }];
+  vi.stubGlobal('fetch', vi.fn(async () => paginated('users', staff)));
+  mount(<Staff actor={owner} />);
+  const card = within(await screen.findByLabelText('Staff member Email Cashier'));
+  expect(card.queryByRole('button', { name: 'Reset PIN' })).toBeNull();
+  expect(card.getByText('Email sign-in ready. Use Forgot password on the sign-in page to reset it.')).toBeTruthy();
+});
+
 it('filters staff on the loaded page and validates a new PIN before calling the reset endpoint', async () => {
   const writes: string[] = [];
-  const staff = [{ id: 'usr_grace', name: 'Grace Mwangi', email: 'grace@shop.test', phone: '255620000001', role: 'cashier', is_active: true, two_factor_enabled: false, must_change_pin: false, email_login_enabled: true, permissions: ['sell'] }, { id: 'usr_joseph', name: 'Joseph Kimaro', email: 'joseph@shop.test', phone: '255620000002', role: 'stockkeeper', is_active: true, two_factor_enabled: false, must_change_pin: false, email_login_enabled: true, permissions: ['receive_stock'] }];
+  const staff = [{ id: 'usr_grace', name: 'Grace Mwangi', email: null, phone: '255620000001', role: 'cashier', is_active: true, two_factor_enabled: false, must_change_pin: false, email_login_enabled: false, permissions: ['sell'] }, { id: 'usr_joseph', name: 'Joseph Kimaro', email: 'joseph@shop.test', phone: '255620000002', role: 'stockkeeper', is_active: true, two_factor_enabled: false, must_change_pin: false, email_login_enabled: true, permissions: ['receive_stock'] }];
   vi.stubGlobal('fetch', vi.fn(async (request: Request) => { if (request.method === 'POST') { writes.push(new URL(request.url).pathname); return response({ data: { id: 'usr_grace' } }); } return paginated('users', staff); }));
   mount(<Staff actor={owner} />);
   fireEvent.change(await screen.findByLabelText('Filter staff on this page'), { target: { value: 'grace' } });
@@ -98,7 +107,12 @@ it('filters staff on the loaded page and validates a new PIN before calling the 
   fireEvent.change(dialog.getByLabelText('New PIN'), { target: { value: '123' } });
   fireEvent.change(dialog.getByLabelText('Repeat new PIN'), { target: { value: '123' } });
   fireEvent.click(dialog.getByRole('button', { name: 'Reset PIN' }));
-  expect(dialog.getByRole('alert').textContent).toContain('4 to 10 digits');
+  expect(dialog.getByRole('alert').textContent).toContain('4 to 6 digits');
+  fireEvent.change(dialog.getByLabelText('New PIN'), { target: { value: '1234567' } });
+  fireEvent.change(dialog.getByLabelText('Repeat new PIN'), { target: { value: '1234567' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Reset PIN' }));
+  expect(dialog.getByRole('alert').textContent).toContain('4 to 6 digits');
+  expect(writes).toEqual([]);
   fireEvent.change(dialog.getByLabelText('New PIN'), { target: { value: '4821' } });
   fireEvent.change(dialog.getByLabelText('Repeat new PIN'), { target: { value: '4822' } });
   fireEvent.click(dialog.getByRole('button', { name: 'Reset PIN' }));

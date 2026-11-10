@@ -1,10 +1,10 @@
 <?php
 namespace App\Http\Controllers\Api\V1;
-use App\Http\Requests\Customers\{CustomerRequest,CollectDebtRequest};
+use App\Http\Requests\Customers\{CustomerRequest,CollectDebtRequest,CustomerStatementRequest};
 use App\Http\Resources\CustomerResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Customer;
-use App\Services\{CustomerService,DebtService};
+use App\Services\{CustomerService,CustomerStatementService,DebtService};
 use Illuminate\Http\Request;
 class CustomerController
 {
@@ -14,6 +14,14 @@ class CustomerController
     public function store(CustomerRequest $r) { return ApiResponse::success((new CustomerResource($this->customers->save($r->user(),$r->validated())))->resolve(),201); }
     public function update(CustomerRequest $r, Customer $customer) { return ApiResponse::success((new CustomerResource($this->customers->save($r->user(),$r->validated(),$customer)))->resolve()); }
     public function debt(Request $r, Customer $customer) { return ApiResponse::success($this->debts->overview($customer)); }
+    public function statement(CustomerStatementRequest $r, Customer $customer)
+    {
+        return ApiResponse::success(app(CustomerStatementService::class)->build($customer, $r->validated()));
+    }
+    public function statementExport(CustomerStatementRequest $r, Customer $customer)
+    {
+        return ApiResponse::success(app(CustomerStatementService::class)->build($customer, $r->validated(), true));
+    }
     public function preview(CollectDebtRequest $r, Customer $customer) { return ApiResponse::success($this->debts->preview($r->user(),$customer,$r->validated())); }
     public function collect(CollectDebtRequest $r, Customer $customer)
     {

@@ -46,6 +46,23 @@ beforeEach(function () {
 
 afterEach(function () { $this->context->clear(); $this->travelBack(); });
 
+it('lets only the tenant owner reprint ledger receipts without widening cashier receipt access', function () {
+    $path = 'reports/sales/'.$this->alphaSaleId.'/receipt';
+    $this->withToken($this->alphaOwnerToken)->getJson(reportsTestUrl($path))->assertOk()
+        ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertJsonPath('data.receipt_number', $this->alphaSaleReceipt)
+        ->assertJsonPath('data.total', 8500)
+        ->assertJsonPath('data.cashier_id', $this->alphaCashier->publicId());
+    // This endpoint is separate from the original cashier/device-only read.
+    $this->getJson(reportsTestUrl('sales/'.$this->alphaSaleId))->assertForbidden();
+    foreach (['Manager', 'Cashier', 'Stockkeeper'] as $role) {
+        $this->withToken($this->{'alpha'.$role.'Token'})->getJson(reportsTestUrl($path))->assertForbidden();
+    }
+    $this->withToken($this->alphaOwnerToken)
+        ->getJson(reportsTestUrl('reports/sales/'.$this->betaSaleId.'/receipt'))->assertNotFound();
+    $this->withToken($this->betaOwnerToken)->getJson(reportsTestUrl($path))->assertUnauthorized();
+});
+
 function reportsTestUrl(string $path, string $shop = 'alpha'): string { return 'http://'.$shop.'.bizismart.test/api/v1/'.$path; }
 
 function reportsTestSale($test, string $shop): array

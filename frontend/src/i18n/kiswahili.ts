@@ -626,6 +626,8 @@ export const kiswahili: Record<string, string> = {
   "Initial price": "Bei ya awali",
   "Refresh labels": "Sasisha lebo",
   "Print labels / PDF": "Chapisha lebo / PDF",
+  "Reprint": "Chapisha tena",
+  "Loading": "Inapakia",
   "Export this page (CSV)": "Hamisha ukurasa huu (CSV)",
   "Loading prices…": "Inapakia bei…",
   "Retry prices": "Jaribu bei tena",

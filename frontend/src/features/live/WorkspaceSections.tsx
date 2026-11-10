@@ -3,7 +3,7 @@ import {ScreenTabs} from '../../components/ui/Primitives';
 import {Staff} from './Staff';
 import StaffOperations from './StaffOperations';
 import {CommissionLeaderboard} from './CommissionLeaderboard';
-import {Devices} from './Devices';
+import {Settings} from './Settings';
 import {Incentives} from './Incentives';
 import {ScaleSettings} from './ScaleSettings';
 import type {ServerUser} from './api';
@@ -22,5 +22,5 @@ export function SettingsWorkspace({actor,shopName,features}:{actor:ServerUser;sh
  const tabs=<ScreenTabs value={tab} onChange={setTab} tabs={[{id:'general',label:'Business & devices'},...(rewards?[{id:'rewards',label:'Loyalty & commissions'}]:[]),...(scales?[{id:'scales',label:'Scale labels'}]:[])]}/>;
  if(tab==='rewards'&&rewards)return <div className="space-y-5 p-4 lg:p-6">{tabs}<Incentives actor={actor} includeScales={false}/></div>;
  if(tab==='scales'&&scales)return <div className="space-y-5 p-4 lg:p-6">{tabs}<ScaleSettings/></div>;
- return <Devices shopName={shopName} navigation={tabs}/>;
+ return <Settings shopName={shopName} navigation={tabs}/>;
 }

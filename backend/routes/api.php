@@ -30,6 +30,8 @@ Route::middleware('auth.no_store')->group(function () {
         Route::post('/auth/email/enrollment', [\App\Http\Controllers\Api\V1\EmailAuthController::class, 'enroll'])->middleware('throttle:auth-step');
         Route::post('/auth/email/activation-link', [\App\Http\Controllers\Api\V1\EmailAuthController::class, 'activationLink'])->middleware(['owner', 'throttle:auth-step']);
         require __DIR__.'/suppliers.php';
+        require __DIR__.'/purchase-assistance.php';
+        require __DIR__.'/settings.php';
         require __DIR__.'/pricing.php';
         require __DIR__.'/finance.php';
         require __DIR__.'/staff-operations.php';
@@ -77,6 +79,8 @@ Route::middleware('auth.no_store')->group(function () {
             Route::get('/customers/{customer}', [$customers,'show']);
             Route::put('/customers/{customer}', [$customers,'update']);
             Route::get('/customers/{customer}/debt', [$customers,'debt']);
+            Route::get('/customers/{customer}/statement', [$customers,'statement']);
+            Route::get('/customers/{customer}/statement/export', [$customers,'statementExport']);
             Route::post('/customers/{customer}/payments/preview', [$customers,'preview'])->name('debts.preview');
             Route::post('/customers/{customer}/payments', [$customers,'collect'])->name('debts.collect');
         });

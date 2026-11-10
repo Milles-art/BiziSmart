@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react';
-import { Activity, ArrowDownToLine, BarChart3, Banknote, CalendarDays, ChevronRight, ClipboardList, Layers, Package, ShieldAlert, TrendingUp, Wallet } from 'lucide-react';
+import { Activity, ArrowDownToLine, BarChart3, Banknote, CalendarDays, ChevronRight, ClipboardList, Layers, Package, Printer, ShieldAlert, TrendingUp, Wallet } from 'lucide-react';
 import { SectionCard, StatCard, SummaryCard } from '../../components/ui/Primitives';
 import { downloadReportCsv as download } from './reportCsv';
 import { LossReportPanels } from './LossReportPanels';
 import { errorMessage, type ServerUser } from './api';
-import { useReportSummaryQuery, useReportSalesQuery, useReportStockQuery } from './financeApi';
+import { BusinessReceiptPrint } from './ReceiptPrint';
+import { useLazyReportReceiptQuery, useReportSummaryQuery, useReportSalesQuery, useReportStockQuery, useReportSalesAnalyticsQuery, type SalesAnalytics } from './financeApi';
 import { Expenses } from './Expenses';
 import { useLanguage, translate as t } from '../../i18n';
 
@@ -12,6 +13,7 @@ const reports = [
   { id: 'summary', label: 'Profit & cash flow', icon: BarChart3, group: 'Business performance' },
   { id: 'sales', label: 'Sales ledger', icon: ClipboardList, group: 'Business performance' },
   { id: 'stock', label: 'Stock valuation', icon: Package, group: 'Business performance' },
+  { id: 'analytics', label: 'Sales analytics', icon: TrendingUp, group: 'Business performance' },
   { id: 'departments', label: 'Departments', icon: Layers, group: 'Business performance' },
   { id: 'tills', label: 'Till reports', icon: Banknote, group: 'Cash & controls' },
   { id: 'losses', label: 'Damage & wastage', icon: ShieldAlert, group: 'Cash & controls' },
@@ -36,7 +38,7 @@ function datePresets() {
   ] as const;
 }
 
-export function Reports({ actor }: { actor: ServerUser }) {
+export function Reports({ actor, shopName = '' }: { actor: ServerUser; shopName?: string }) {
   useLanguage();
   const reportAccess = actor.role === 'owner' && actor.permissions.includes('view_reports');
   const [tab, setTab] = useState<ReportId>('summary');
@@ -45,6 +47,7 @@ export function Reports({ actor }: { actor: ServerUser }) {
   const summary = useReportSummaryQuery(filters, { skip: !reportAccess || tab !== 'summary', refetchOnMountOrArgChange: true });
   const sales = useReportSalesQuery(filters, { skip: !reportAccess || tab !== 'sales', refetchOnMountOrArgChange: true });
   const stock = useReportStockQuery(filters, { skip: !reportAccess || tab !== 'stock', refetchOnMountOrArgChange: true });
+  const analytics = useReportSalesAnalyticsQuery(filters, { skip: !reportAccess || tab !== 'analytics', refetchOnMountOrArgChange: true });
   const active = tab === 'sales' ? sales : tab === 'stock' ? stock : summary;
   const directReport = ['summary', 'sales', 'stock'].includes(tab);
   const selected = reports.find(report => report.id === tab)!;
@@ -78,11 +81,49 @@ export function Reports({ actor }: { actor: ServerUser }) {
             <SectionCard title={t('Income, costs & cash')} action={<button className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700" onClick={() => download('bizismart-report.csv', [['Metric', 'Value', 'Unit'], ...Object.entries(summary.currentData!.summary).map(([key, value]) => [key, value, ['sale_count', 'legacy_cost_allocations'].includes(key) ? 'count' : 'TSh'])])}><ArrowDownToLine className="h-4 w-4" />{t('Export report (CSV)')}</button>}><dl className="grid gap-x-6 sm:grid-cols-2">{[['Cost of goods sold', 'net_cogs'], ['Expenses', 'net_expenses'], ['Stock loss cost', 'stock_loss_cost'], ['Commission accrual', 'commission_accrual'], ['Cash received', 'cashflow_in'], ['Cash paid', 'cashflow_out'], ['Output VAT', 'net_output_vat']].map(([label, key]) => <div key={key} className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 py-3 text-sm"><dt className="text-slate-500">{t(label)}</dt><dd className="font-semibold tabular-nums text-slate-800">{money(summary.currentData!.summary[key])}</dd></div>)}</dl><p className="mt-4 text-xs text-slate-400">{t('VAT is a bookkeeping summary of saved receipts. This is not a tax filing or TRA integration.')}</p>{summary.currentData.summary.legacy_cost_allocations > 0 && <p className="mt-2 text-xs text-amber-700">{t('Older sale costs use their original recorded batch costs.')}</p>}</SectionCard>
             <SectionCard title={t('Current balances')}><div className="grid grid-cols-2 gap-3 xl:grid-cols-4"><SummaryCard title={t('Customer debt')} value={money(summary.currentData.outstanding_customer_debt)} /><SummaryCard title={t('Recorded stock value')} value={money(summary.currentData.stock.recorded_value)} /><SummaryCard title={t('Sellable stock value')} value={money(summary.currentData.stock.sellable_value)} /><SummaryCard title={t('Held stock value')} value={money(summary.currentData.stock.held_value)} /></div>{summary.currentData.stock.negative_batches > 0 && <p role="alert" className="mt-3 text-sm text-amber-700">{t('Negative stock conflicts are excluded from physical valuation.')}</p>}</SectionCard>
           </>}
-          {tab === 'sales' && sales.currentData && !sales.error && <SectionCard title={t('Sales ledger')} action={<span className="text-xs text-slate-400">{t('Page')} {filters.page}</span>}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Receipt', 'Branch', 'Cashier', 'Total', 'VAT'].map(label => <th key={label} className="p-3 text-left">{t(label)}</th>)}</tr></thead><tbody>{sales.currentData.sales.map(sale => <tr key={sale.id} className="border-t"><td className="p-3">{sale.receipt_number}</td><td className="p-3">{sale.branch}</td><td className="p-3">{sale.cashier}</td><td className="p-3 font-semibold tabular-nums">{money(sale.total)}</td><td className="p-3 tabular-nums">{money(sale.vat_amount)}</td></tr>)}</tbody></table>{!sales.currentData.sales.length && <p className="py-8 text-center text-sm text-slate-400">{t('No sales in this period.')}</p>}</div><button className={secondary + ' mt-4'} onClick={() => download('bizismart-sales-page.csv', [['Receipt', 'Branch', 'Cashier', 'Gross', 'VAT', 'Net'], ...sales.currentData!.sales.map(sale => [sale.receipt_number, sale.branch, sale.cashier, sale.total, sale.vat_amount, sale.net_revenue])])}><ArrowDownToLine className="h-4 w-4" />{t('Export this page (CSV)')}</button></SectionCard>}
+          {tab === 'sales' && sales.currentData && !sales.error && <SectionCard title={t('Sales ledger')} action={<span className="text-xs text-slate-400">{t('Page')} {filters.page}</span>}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Receipt', 'Branch', 'Cashier', 'Total', 'VAT', 'Receipt'].map(label => <th key={label} className="p-3 text-left">{t(label)}</th>)}</tr></thead><tbody>{sales.currentData.sales.map(sale => <tr key={sale.id} className="border-t"><td className="p-3">{sale.receipt_number}</td><td className="p-3">{sale.branch}</td><td className="p-3">{sale.cashier}</td><td className="p-3 font-semibold tabular-nums">{money(sale.total)}</td><td className="p-3 tabular-nums">{money(sale.vat_amount)}</td><td className="p-3"><ReprintReceipt saleId={sale.id} shopName={shopName}/></td></tr>)}</tbody></table>{!sales.currentData.sales.length && <p className="py-8 text-center text-sm text-slate-400">{t('No sales in this period.')}</p>}</div><button className={secondary + ' mt-4'} onClick={() => download('bizismart-sales-page.csv', [['Receipt', 'Branch', 'Cashier', 'Gross', 'VAT', 'Net'], ...sales.currentData!.sales.map(sale => [sale.receipt_number, sale.branch, sale.cashier, sale.total, sale.vat_amount, sale.net_revenue])])}><ArrowDownToLine className="h-4 w-4" />{t('Export this page (CSV)')}</button></SectionCard>}
+          {tab === 'analytics' && <SalesAnalyticsPanel query={analytics}/>}
           {tab === 'stock' && stock.currentData && !stock.error && <SectionCard title={t('Stock valuation')} action={<span className="text-xs text-slate-400">{t('Page')} {filters.page}</span>}><div className="space-y-3">{stock.currentData.stock.map(batch => <div key={batch.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 p-3"><div className="min-w-0"><p className="break-words text-sm font-semibold text-slate-700">{batch.product_name}</p><p className="mt-1 text-xs text-slate-500">{batch.batch_number} · {batch.qty} {batch.unit} · {t(batch.status)}</p></div><span className="text-sm font-semibold tabular-nums text-slate-800">{money(batch.value)}</span></div>)}{!stock.currentData.stock.length && <p className="py-8 text-center text-sm text-slate-400">{t('No stock batches match this report.')}</p>}</div><button className={secondary + ' mt-4'} onClick={() => download('bizismart-stock-page.csv', [['Product', 'Batch', 'Quantity', 'Unit', 'Cost', 'Value', 'Status'], ...stock.currentData!.stock.map(batch => [batch.product_name, batch.batch_number, batch.qty, batch.unit, batch.cost_price, batch.value, batch.status])])}><ArrowDownToLine className="h-4 w-4" />{t('Export this page (CSV)')}</button></SectionCard>}
           {['sales', 'stock'].includes(tab) && <div className="flex items-center justify-between gap-3"><button disabled={filters.page === 1 || active.isFetching} className={secondary} onClick={() => setFilters({ ...filters, page: filters.page - 1 })}>{t('Previous')}</button><span className="text-xs text-slate-500">{t('Page')} {filters.page}</span><button disabled={active.isFetching || (tab === 'sales' ? !sales.currentData || filters.page * sales.currentData.meta.per_page >= sales.currentData.meta.total : !stock.currentData || filters.page * stock.currentData.meta.per_page >= stock.currentData.meta.total)} className={secondary} onClick={() => setFilters({ ...filters, page: filters.page + 1 })}>{t('Next')}</button></div>}
         </>}
       </div>
     </div>
+  </div>;
+}
+
+/** Reprints a saved receipt from the sales ledger using the immutable receipt snapshot. */
+function ReprintReceipt({ saleId, shopName }: { saleId: string; shopName: string }) {
+  const [getSale, { currentData, isFetching, error }] = useLazyReportReceiptQuery();
+  const [reprint, setReprint] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const request = (id = saleId) => { setReprint(true); setFailed(false); void getSale(id).unwrap().catch(() => setFailed(true)); };
+  if (!reprint) return <button type="button" onClick={() => request()} className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"><Printer className="h-3.5 w-3.5" />{t('Reprint')}</button>;
+  if (isFetching) return <span role="status" className="text-xs text-slate-400">{t('Loading')}…</span>;
+  if (error || failed || !currentData) return <button type="button" onClick={() => request()} className="text-xs font-semibold text-red-600 underline">{t('Try again')}</button>;
+  return <BusinessReceiptPrint sale={currentData} shopName={shopName} compact trigger={<><Printer className="h-3.5 w-3.5" />{t('Reprint')}</>} />;
+}
+
+function SalesAnalyticsPanel({ query }: { query: { currentData?: SalesAnalytics; isFetching: boolean; error?: unknown; refetch: () => unknown } }) {
+  const data = query.currentData;
+  if (query.isFetching && !data) return <p role="status" className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-500">{t('Loading report�')}</p>;
+  if (query.error) return <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{errorMessage(query.error)} <button onClick={() => void query.refetch()} className="font-medium underline">{t('Try again')}</button></div>;
+  if (!data) return null;
+  const peak = Math.max(1, ...data.hourly.map(bucket => Math.max(bucket.sales, bucket.refunds)));
+  const exportCsv = () => download('bizismart-sales-analytics.csv', [
+    ['Section', 'Name', 'Value', 'Detail'],
+    ...data.payment_methods.map(method => [t('Payment method'), method.label, String(method.sales), `${t('Refunds')}: ${method.refunds}`]),
+    ...data.hourly.map(bucket => [t('Hour'), bucket.label, String(bucket.sales), `${t('Refunds')}: ${bucket.refunds}`]),
+    ...data.top_sellers.map(row => [t('Top seller'), row.name, String(row.revenue), `${row.qty} ${row.unit}`]),
+    ...data.slow_movers.map(row => [t('Slow mover'), row.name, String(row.stock_value), `${row.stock_qty} ${row.unit}`]),
+  ]);
+  return <div className="space-y-4">
+    <SectionCard title={t('Payment methods')} action={<button className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700" onClick={exportCsv}><ArrowDownToLine className="h-4 w-4" />{t('Export analytics (CSV)')}</button>}>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">{data.payment_methods.map(method => <SummaryCard key={method.method} title={method.label} value={money(method.net)}/>)}</div>
+      <div className="mt-4 space-y-2">{data.payment_methods.map(method => <div key={method.method} className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-2 text-sm"><span className="text-slate-600">{method.label}</span><span className="tabular-nums text-slate-800">{money(method.sales)}{method.refunds > 0 && <span className="ml-2 text-amber-700">{t('Refunds')} {money(method.refunds)}</span>}</span></div>)}</div>
+      <p className="mt-3 text-xs text-slate-400">{t('Cash, mobile money and customer credit are counted from saved payment records, never from a typed reference.')}</p>
+    </SectionCard>
+    <SectionCard title={t('Sales by hour')}><div className="space-y-2">{data.hourly.map(bucket => <div key={bucket.hour} className="flex items-center gap-3"><span className="w-12 shrink-0 text-xs tabular-nums text-slate-500">{bucket.label}</span><div className="h-3 flex-1 rounded bg-slate-100"><div className="h-3 rounded bg-emerald-500" style={{ width: `${Math.round((bucket.sales / peak) * 100)}%` }}/></div><span className="w-28 shrink-0 text-right text-xs tabular-nums text-slate-700">{money(bucket.net)}</span></div>)}{!data.hourly.length && <p className="py-4 text-center text-sm text-slate-400">{t('No sales in this period.')}</p>}</div><p className="mt-3 text-xs text-slate-400">{t('Hours use Tanzania time and follow each saved sale event date.')}</p></SectionCard>
+    <SectionCard title={t('Top sellers')}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Product', 'Quantity', 'Sales', 'Cost', 'Profit'].map(label => <th key={label} className="p-2 text-left text-xs text-slate-400">{t(label)}</th>)}</tr></thead><tbody>{data.top_sellers.map(row => <tr key={row.product_id} className="border-t border-slate-100"><td className="p-2 text-slate-700">{row.name}</td><td className="p-2 tabular-nums text-slate-600">{row.qty} {row.unit}</td><td className="p-2 font-semibold tabular-nums text-slate-800">{money(row.revenue)}</td><td className="p-2 tabular-nums text-slate-500">{money(row.cost)}</td><td className="p-2 font-semibold tabular-nums text-emerald-700">{money(row.profit)}</td></tr>)}</tbody></table>{!data.top_sellers.length && <p className="py-4 text-center text-sm text-slate-400">{t('No sales in this period.')}</p>}</div><p className="mt-3 text-xs text-slate-400">{t('Refunded lines reduce the quantity, sales and cost of the same product.')}</p></SectionCard>
+    <SectionCard title={t('Slow-moving stock')}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Product', 'In stock', 'Stock value', 'Nearest expiry'].map(label => <th key={label} className="p-2 text-left text-xs text-slate-400">{t(label)}</th>)}</tr></thead><tbody>{data.slow_movers.map(row => <tr key={row.product_id} className="border-t border-slate-100"><td className="p-2 text-slate-700">{row.name}</td><td className="p-2 tabular-nums text-slate-600">{row.stock_qty} {row.unit}</td><td className="p-2 font-semibold tabular-nums text-amber-700">{money(row.stock_value)}</td><td className="p-2 text-slate-500">{row.expiry_date ?? t('Not tracked')}</td></tr>)}</tbody></table>{!data.slow_movers.length && <p className="py-4 text-center text-sm text-slate-400">{t('Every product with stock recorded a sale in this period.')}</p>}</div></SectionCard>
   </div>;
 }

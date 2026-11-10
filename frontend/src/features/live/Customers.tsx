@@ -8,9 +8,10 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import { Dialog } from '@mui/material';
 import { Users, Wallet, Plus, Phone, Search, ChevronRight } from 'lucide-react';
 import { SectionCard, SummaryCard } from '../../components/ui/Primitives';
+import {downloadReportCsv} from './reportCsv';
 import {MobileDebtPayment} from './MobileDebtPayment';
 import { collectionActions, type CollectionState } from './collectionState';
-import { errorMessage, useCustomersQuery, useSaveCustomerMutation, useCustomerDebtQuery, useCurrentTillQuery,
+import { errorMessage, useCustomersQuery, useSaveCustomerMutation, useCustomerDebtQuery, useCustomerStatementQuery, useExportCustomerStatementMutation, useCurrentTillQuery,
   usePaymentCapabilitiesQuery,useMobilePaymentsQuery, usePreviewCollectionMutation, useCollectDebtMutation, type Customer, type CollectionReview, type ServerUser, type SessionState } from './api';
 
 const money = (value:number) => `TSh ${value.toLocaleString('en-TZ')}`;
@@ -32,6 +33,7 @@ export function Customers({ actor }: { actor: ServerUser }) {
   useEffect(()=>{if(selected&&typeof window.matchMedia==='function'&&window.matchMedia('(max-width: 1279px)').matches)profileRef.current?.scrollIntoView?.({block:'start'});},[selected]);
   const customer = customers.currentData?.customers.find((c)=>c.id===selected?.id) ?? selected;
   const debt = useCustomerDebtQuery(customer?.id ?? '',{skip:!customer});
+  const [statementOpen,setStatementOpen] = useState(false);
   const [editor,setEditor] = useState<{id?:string;name:string;phone:string;limit:string}|null>(null);
   const [save] = useSaveCustomerMutation(); const [preview] = usePreviewCollectionMutation(); const [collect] = useCollectDebtMutation();
   const [cash,setCash] = useState(''); const [allocations,setAllocations] = useState<Record<string,string>>({});
@@ -107,6 +109,8 @@ export function Customers({ actor }: { actor: ServerUser }) {
           {debt.currentData.open_sales.length>0 && <>{tillAccess ? <><label className="mt-4 block text-xs text-slate-500">{translate("Cash collection amount (TSh)")}<input disabled={locked} value={cash} onChange={(e)=>{setReview(null);setCash(e.target.value);}} inputMode="numeric" className={inputClass}/></label><button disabled={locked||!till.data?.till||!!till.error||till.isFetching} onClick={()=>void inspect()} className="mt-3 w-full rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40">{translate("Review cash collection")}</button>{capability.currentData?.enabled&&<button disabled={locked||!till.data?.till||!!till.error||till.isFetching} onClick={()=>void inspect('mpesa')} className="mt-2 w-full rounded-lg border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-40">{translate("Pay selected invoices with Selcom")}</button>}{!till.data?.till && !till.isFetching && <p className="mt-2 text-xs text-amber-700">{translate("Open your own till to collect cash.")}</p>}</> : <p className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">{translate("Debt collections are recorded by a staff member with till access. Ask the owner or a branch manager to collect this payment.")}</p>}</>}
           {debt.currentData.open_sales.length===0 && <p className="text-sm text-emerald-600">{translate("No unpaid sales.")}</p>}</div>
         </>}
+        <div className="mt-4 border-t border-slate-100 pt-4"><button disabled={locked} onClick={()=>setStatementOpen(true)} className="min-h-11 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-emerald-700">{translate("Customer statement")}</button></div>
+        <Dialog open={statementOpen} onClose={()=>!locked&&setStatementOpen(false)} maxWidth="md" fullWidth aria-labelledby="statement-title">{customer?.id && <CustomerStatementDialog key={customer.id} customerId={customer.id} onClose={()=>setStatementOpen(false)} busy={locked}/>}</Dialog>
         {loyaltyEnabled&&<div className="space-y-4 border-t border-slate-100 pt-4"><CustomerLoyalty customerId={customer.id}/><LoyaltyCardPanel key={customer.id} customerId={customer.id}/></div>}{messagingEnabled&&<CustomerMessaging customerId={customer.id}/>}
       </div> : <div className="flex flex-col items-center py-10 text-slate-300"><Users className="mb-3 h-10 w-10"/><p className="text-sm text-slate-400">{translate("Select a customer to view their profile")}</p></div>}</SectionCard></div>
     </div>
@@ -118,3 +122,51 @@ export function Customers({ actor }: { actor: ServerUser }) {
 
 
 
+
+function CustomerStatementDialog({ customerId, onClose, busy }: { customerId: string; onClose: () => void; busy: boolean }) {
+  const store = useStore<{session:SessionState}>();
+  const [page,setPage] = useState(1);
+  const statement = useCustomerStatementQuery({customer:customerId,page});
+  const [exportStatement,{isLoading:exporting}] = useExportCustomerStatementMutation();
+  const [exportError,setExportError] = useState('');
+  const exportCsv = async () => {
+    if(exporting)return;
+    const token=store.getState().session.token;
+    if(!token)return;
+    setExportError('');
+    const request=exportStatement(customerId);
+    try {
+    const data = await request.unwrap();
+    if(store.getState().session.token!==token)return;
+    const rows = [
+      ['Date', 'Entry', 'Reference', 'Charge (TSh)', 'Payment (TSh)', 'Debt reduced (TSh)', 'Balance (TSh)'],
+      ...data.entries.map(entry => [entry.date, entry.kind === 'credit_sale' ? 'Credit sale' : entry.kind === 'return' ? 'Return' : 'Collection', entry.label, String(entry.charge), String(entry.payment), String(entry.debt_reduction), String(entry.balance)]),
+      [],
+      ['Opening balance', '', '', '', '', '', String(data.opening_balance)],
+      ['Charges', '', '', '', '', '', String(data.charges)],
+      ['Payments', '', '', '', '', '', String(data.payments)],
+      ['Closing balance', '', '', '', '', '', String(data.closing_balance)],
+    ];
+    downloadReportCsv(`customer-statement-${customerId}.csv`,rows);
+    } catch(e) { if(store.getState().session.token===token)setExportError(errorMessage(e)); }
+    finally { request.reset(); }
+  };
+  return <div className="p-6">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 id="statement-title" className="text-lg font-bold text-slate-800">{translate("Customer statement")}</h2><p className="mt-1 text-xs text-slate-500">{statement.currentData ? `${statement.currentData.currency} · ${statement.currentData.period.timezone}` : ''}</p></div><button disabled={busy || exporting || statement.isFetching || !!statement.error || !statement.currentData} onClick={()=>void exportCsv()} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-emerald-700">{translate("Export statement (CSV)")}</button></div>
+    {statement.isFetching && !statement.currentData && <p role="status" className="text-sm text-slate-500">{translate("Loading statement…")}</p>}
+    {statement.error && <p role="alert" className="text-sm text-red-600">{errorMessage(statement.error)}</p>}
+    {exportError && <p role="alert" className="text-sm text-red-600">{exportError}</p>}
+    {statement.currentData && !statement.error && <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-400">{translate("Opening balance")}</p><p className="font-bold tabular-nums text-slate-800">{money(statement.currentData.opening_balance)}</p></div>
+        <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-400">{translate("Charges")}</p><p className="font-bold tabular-nums text-slate-800">{money(statement.currentData.charges)}</p></div>
+        <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-400">{translate("Payments")}</p><p className="font-bold tabular-nums text-slate-800">{money(statement.currentData.payments)}</p></div>
+        <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-400">{translate("Closing balance")}</p><p className="font-bold tabular-nums text-emerald-700">{money(statement.currentData.closing_balance)}</p></div>
+      </div>
+      <div className="max-h-96 overflow-y-auto"><table className="w-full text-sm"><thead className="sticky top-0 bg-white"><tr>{['Date', 'Entry', 'Charge', 'Payment', 'Debt reduced', 'Balance'].map(label => <th key={label} className="p-2 text-left text-xs text-slate-400">{translate(label)}</th>)}</tr></thead><tbody>{statement.currentData.entries.map((entry, index) => <tr key={index} className="border-t border-slate-100"><td className="p-2 text-slate-500">{entry.date}</td><td className="p-2 text-slate-700">{entry.kind === 'credit_sale' ? translate("Credit sale") : entry.kind === 'return' ? translate("Return") : translate("Collection")}<p className="text-xs text-slate-400">{entry.label}</p></td><td className="p-2 tabular-nums text-slate-700">{entry.charge ? money(entry.charge) : '—'}</td><td className="p-2 tabular-nums text-slate-700">{entry.payment ? money(entry.payment) : '—'}</td><td className="p-2 tabular-nums text-amber-700">{entry.debt_reduction ? money(entry.debt_reduction) : '—'}</td><td className="p-2 font-semibold tabular-nums text-slate-800">{money(entry.balance)}</td></tr>)}</tbody></table>{!statement.currentData.entries.length && <p className="py-6 text-center text-sm text-slate-400">{translate("No credit movements in this period.")}</p>}</div>
+      <nav aria-label={translate("Statement pages")} className="flex items-center justify-between gap-3 text-sm"><button disabled={busy||statement.isFetching||page===1} onClick={()=>setPage(page-1)}>{translate("Previous")}</button><span>{translate("Page")} {page}</span><button disabled={busy||statement.isFetching||page*statement.currentData.meta.per_page>=statement.currentData.meta.total} onClick={()=>setPage(page+1)}>{translate("Next")}</button></nav>
+      <p className="text-xs text-slate-400">{translate("The running balance is recomputed from the credit, return and collection journals.")}</p>
+    </div>}
+    <button disabled={busy} onClick={onClose} className="mt-4 text-sm text-slate-500">{translate("Close")}</button>
+  </div>;
+}

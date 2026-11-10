@@ -77,7 +77,7 @@ function Workspace() {
     : screen === 'settings' ? <SettingsWorkspace actor={data.user} shopName={data.business.name} features={data.features}/>
     : screen === 'inventory' ? <Inventory actor={data.user} onNavigate={navigate} />
     : screen === 'suppliers' ? <Suppliers actor={data.user}/>
-    : screen === 'reports' ? <Reports actor={data.user}/>
+    : screen === 'reports' ? <Reports actor={data.user} shopName={data.business.name}/>
     : screen === 'banking' ? <div className="space-y-5 p-4 lg:p-6"><Banking/></div>
     : screen === 'messaging' ? <Messaging/>
     : screen === 'offline' ? <><OfflinePOS actor={data.user} onClose={()=>navigate('dashboard')} onLockChange={setOfflineLocked}/>{data.user.role==='owner'&&<OfflineQuarantine actor={data.user} onInventory={()=>navigate('inventory')}/>}</>

@@ -1,0 +1,13 @@
+# F24 — Business profile and receipt preferences
+
+The master POS completion command authorizes an editable business profile and receipt configuration. Owners edit business name, address, shop phone, TIN, VRN, optional header/footer and a default 58 mm, 80 mm or A4 paper width in Settings. Existing encrypted Business columns hold contact/tax identifiers; `settings.receipt` holds only header/footer/paper width. Other settings remain unchanged. No migration is needed.
+
+`GET /api/v1/settings/business` returns the current tenant profile to authenticated approved-device staff for printing. `PUT` is owner-only and revalidates the session under lock before changing the tenant business. The request requires name, nullable address/phone/TIN/VRN/header/footer and paper_width; currency, timezone, VAT rate, business identity/subdomain and owner login contact cannot be changed through this endpoint. Responses use the standard envelope and fixed currency `TZS`/timezone `Africa/Dar_es_Salaam`. No internal IDs or private configuration are returned.
+
+Receipt print/PDF uses the current configured business details. It does not replace immutable saved line prices, quantities, discounts, payments, VAT rate or VAT amount. Old receipts therefore show current business contact/header/footer on reprinting; this is explicitly explained in Settings. Blank tax fields remain absent, never invented. All receipt text is escaped as text. A per-preview paper override changes only output layout and is not persisted. Browser printer settings must match the chosen physical paper; no driver installation or hardware compatibility is claimed.
+
+The named `BusinessReceiptPrint` wrapper loads the profile and refuses printing when it cannot load it. The pure `ReceiptPrint` component remains reusable with an explicit profile. Owner-ledger receipt reads are separately authorized by the reports service; the original cashier/device sale-read policy is retained.
+
+Verification: BusinessSettingsTest covers owner-only mutation, current tenant isolation, staff print reads, protected inputs and preservation of unrelated settings. Receipt output tests cover escaping profile text, 58 mm layout and unchanged saved totals. Settings UI tests cover real API submission and failed-save draft retention. Final run evidence is recorded in the coordinated test report.
+
+2026-10-19 correction: owner ledger reprints use `GET /reports/sales/{sale}/receipt`, guarded by owner + view_reports + reports entitlement with current session revalidation in ReportService. The customer/device sale route is unchanged. Regression coverage includes cashier receipts, cross-tenant sale IDs, foreign tokens and non-owner denial.

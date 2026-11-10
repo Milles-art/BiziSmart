@@ -6,6 +6,14 @@ use App\Support\{Money,Quantity,ReportMath,ReportPeriod};
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 class ReportService {
+ public function receipt(User $original, Sale $sale): Sale {
+  $sale->assertCurrentBusiness();
+  return DB::transaction(function () use ($original, $sale) {
+   $actor = app(FinancialActorService::class)->lock($original, 'view_reports');
+   if (! $actor->hasRole('owner')) throw new \Illuminate\Auth\Access\AuthorizationException;
+   return Sale::whereKey($sale->id)->firstOrFail();
+  });
+ }
  public function summary(array $filters):array{return DB::transaction(function()use($filters){$period=new ReportPeriod($filters['from'],$filters['to']);$branch=$this->branch($filters);$daily=[];for($day=\Carbon\CarbonImmutable::parse($period->from,'Africa/Dar_es_Salaam')->startOfDay();$day->toDateString()<=$period->to;$day=$day->addDay())$daily[$day->toDateString()]=['date'=>$day->toDateString(),'net_sales_gross'=>0];$v=array_fill_keys(['sale_count','sales_gross','sales_vat','refunds_gross','refunds_vat','cogs','returned_cogs','expenses','expense_reversals','cash_sales','mobile_sales','credit_sales','cash_collections','mobile_collections','cash_refunds','mobile_refunds','expense_payments','expense_refunds','supplier_payments','commission_accrual','commission_payouts','legacy_cost_allocations','stock_loss_cost'],0);$sales=$this->window(Sale::query(),$period);if($branch)$sales->where('branch_id',$branch->id);$this->bounded($sales);
   $sales->with(['items.batch','payments'])->chunkById(100,function($rows)use(&$v,&$daily){foreach($rows as$s){$date=($s->occurred_at??$s->created_at)->copy()->timezone('Africa/Dar_es_Salaam')->toDateString();$this->add($daily[$date],'net_sales_gross',$s->total);$this->add($v,'sale_count',1);$this->add($v,'sales_gross',$s->total);$this->add($v,'sales_vat',$s->vat_amount);foreach($s->payments as$p){$key=match($p->method){'cash'=>'cash_sales','mpesa'=>'mobile_sales','credit'=>'credit_sales'};$this->add($v,$key,(int)$p->amount);}foreach($s->items as$item){if($item->cost_price===null)$this->add($v,'legacy_cost_allocations',1);$this->add($v,'cogs',$this->cost($item,$s));}}});
   $returns=$this->window(SaleReturn::query(),$period);if($branch)$returns->whereIn('sale_id',Sale::where('branch_id',$branch->id)->select('id'));$this->bounded($returns);
